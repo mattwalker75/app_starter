@@ -1,0 +1,17 @@
+# Build output
+.build/
+build/
+*.xcodeproj
+*.xcworkspace
+.swiftpm/
+DerivedData/
+
+# Your bundles, secrets and logs never live in the repo; the app keeps them in ~/Library/Application Support/App Starter/
+
+# OS / editor cruft
+.DS_Store
+*.swp
+*~
+
+# a half-finished icon build
+icon/AppStarter.iconset/
