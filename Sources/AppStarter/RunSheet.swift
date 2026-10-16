@@ -90,7 +90,7 @@ struct RunSheet: View {
                         Button(f.apps.count == 1 ? "Skip it and go on" : "Skip them and go on") { session.choose(.skip) }
                         Button(session.phase == .starting ? "Stop what started" : "End here") { session.choose(.giveUp) }
                             .foregroundStyle(Theme.problem)
-                        if let a = session.bundle.app(f.apps[0].id) { Button("Full log") { model.sheet = .log(a); model.shownSession = nil }.buttonStyle(.link).foregroundStyle(Theme.accent) }
+                        if let a = session.bundle.app(f.apps[0].id) { Button("Full log") { model.shownSession = nil; DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { model.sheet = .log(a) } }.buttonStyle(.link).foregroundStyle(Theme.accent) }
                     }
                     .padding(.leading, 28)
                 }
@@ -152,7 +152,7 @@ struct LogViewer: View {
             HStack {
                 Text("Log — \(app.name)").font(DS.heading)
                 Spacer()
-                Button("Refresh") { load() }.keyboardShortcut("r")
+                Button("Refresh") { load() }
             }
             ScrollViewReader { proxy in
                 ScrollView {

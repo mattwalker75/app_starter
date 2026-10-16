@@ -20,7 +20,7 @@ each app to be really up before starting the ones that need it.
 Click an app to edit it.
 - **Name** and **Where it goes**: its own step at the end, a sub-bundle, or a new sub-bundle.
 - **Working folder** (optional): the commands run there, as you, in your login shell — just as if you typed
-  them in Terminal (your PATH and Homebrew work).
+  them in Terminal (your PATH and Homebrew work; `~/.zshrc` is read too, quietly).
 - **Start**
   - *Starts itself in the background*: the command sets the app going and finishes
     (`./TRACKER.sh --start`, `open -a Docker`, `docker start open-webui`).
@@ -50,7 +50,8 @@ Click an app to edit it.
   - **Retry** runs it again,
   - **Skip it and go on** leaves it and starts the next step,
   - **Stop what started** stops what this run started (newest first) and ends.
-- **Cancel** stops waiting; whatever has started stays as it is.
+- **Cancel** stops waiting; whatever has started — even a start command still running — stays as it is.
+- **Retry** on an app App Starter keeps running waits for the same process again; it never starts a second copy.
 
 ## The lights
 - 🟢 **green** — every app in the bundle is up

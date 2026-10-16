@@ -142,6 +142,9 @@ public struct AppItem: Codable, Equatable, Identifiable, Sendable {
             }
         default: break
         }
+        if mode == .keepRunning && health.kind == .returnCode {
+            return "A return-code check needs a start command that finishes; this one keeps running. Pick None, Output text or URL."
+        }
         if waitSeconds < 1 || waitSeconds > 3600 { return "Wait between 1 second and an hour." }
         return nil
     }
@@ -152,4 +155,57 @@ public struct ASError: Error, LocalizedError, Equatable {
     public let message: String
     public init(_ message: String) { self.message = message }
     public var errorDescription: String? { message }
+}
+
+// Reading bundles.json: a key that is missing (a file from an older App Starter) takes its default, so adding a field
+// never makes old files unreadable.
+extension AppBundle {
+    enum CodingKeys: String, CodingKey { case id, name, steps, stopOrder, startAtLogin, stopAtLogout }
+    public init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? "Bundle"
+        steps = try c.decodeIfPresent([Step].self, forKey: .steps) ?? []
+        stopOrder = try c.decodeIfPresent([UUID].self, forKey: .stopOrder)
+        startAtLogin = try c.decodeIfPresent(Bool.self, forKey: .startAtLogin) ?? false
+        stopAtLogout = try c.decodeIfPresent(Bool.self, forKey: .stopAtLogout) ?? false
+    }
+}
+
+extension Step {
+    enum CodingKeys: String, CodingKey { case id, isGroup, name, apps }
+    public init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        isGroup = try c.decodeIfPresent(Bool.self, forKey: .isGroup) ?? false
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+        apps = try c.decodeIfPresent([AppItem].self, forKey: .apps) ?? []
+    }
+}
+
+extension EnvVar {
+    enum CodingKeys: String, CodingKey { case id, name, value, secret }
+    public init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+        value = try c.decodeIfPresent(String.self, forKey: .value) ?? ""
+        secret = try c.decodeIfPresent(Bool.self, forKey: .secret) ?? false
+    }
+}
+
+extension AppItem {
+    enum CodingKeys: String, CodingKey { case id, name, workingFolder, mode, start, stop, env, health, waitSeconds }
+    public init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? "Application"
+        workingFolder = try c.decodeIfPresent(String.self, forKey: .workingFolder) ?? ""
+        mode = try c.decodeIfPresent(RunMode.self, forKey: .mode) ?? .startsItself
+        start = try c.decodeIfPresent(String.self, forKey: .start) ?? ""
+        stop = try c.decodeIfPresent(String.self, forKey: .stop) ?? ""
+        env = try c.decodeIfPresent([EnvVar].self, forKey: .env) ?? []
+        health = try c.decodeIfPresent(HealthCheck.self, forKey: .health) ?? .none
+        waitSeconds = try c.decodeIfPresent(Int.self, forKey: .waitSeconds) ?? 60
+    }
 }

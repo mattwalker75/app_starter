@@ -24,7 +24,9 @@
 Needs macOS 14 or newer and Xcode's command-line tools; when they are missing it offers to start
 Apple's installer (`xcode-select --install`), then asks you to run it again. Test output goes to
 `build/test.log`; a red suite asks "Build and install anyway?" (`--yes` goes ahead without asking). A failed build or
-copy stops with the reason — the old app is never replaced by a broken one. Safe to run again at
+copy stops with the reason — the new app is copied beside the old one first and swapped in, so the old
+app is never replaced by a broken one. If App Starter is open it offers to close it (your apps keep running)
+and opens the new version afterwards. Safe to run again at
 any time: it rebuilds and replaces the app.
 
 **Run it again after pulling new code.** (`BUILD_APP.sh` on its own only writes `build/`; the copy
@@ -85,8 +87,10 @@ fails, and nothing is packaged), then assembles the `.app`: the program as `Cont
 Starter`, `icon/AppStarter.icns`, an `Info.plist` (bundle id `com.mattwalker.appstarter`, version
 from `Sources/AppStarterCore/Version.swift`, macOS 14 minimum, the usage descriptions macOS shows
 when a command touches Desktop/Documents/Downloads, removable drives or network shares, and
-`NSAllowsArbitraryLoads` + `NSAllowsLocalNetworking`, so a URL health check can reach any address you give
-it — `http://localhost:…`, a Tailscale or LAN name, plain `http://` or `https://`) and the signature. A failed signature removes the half-made app and stops.
+`NSAllowsArbitraryLoads` — on its own, since macOS ignores it when `NSAllowsLocalNetworking` is there too — so
+a URL health check can reach any address you give it: `http://localhost:…`, a Tailscale or LAN name, plain
+`http://` or `https://`; and `NSAppleEventsUsageDescription`, for commands that control other apps with
+`osascript`) and the signature. A failed signature removes the half-made app and stops.
 
 ## icon/make_icns.sh
 

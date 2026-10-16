@@ -17,7 +17,7 @@ struct AppStarterApp: App {
                 .tint(Theme.accent)
                 .font(DS.body)
                 .frame(minWidth: 860, minHeight: 560)
-                .onAppear { delegate.model = model; model.addSampleIfAsked() }
+                .onAppear { model.addSampleIfAsked() }
         }
         .defaultSize(width: 1120, height: 740)
         .commands {
@@ -62,20 +62,32 @@ struct AppStarterApp: App {
 
 /// Stops the stop-at-logout bundles before the Mac logs out, restarts or shuts down.
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    weak var model: AppModel?
-    private var loggingOut = false
+    /// the model, whether or not the main window has opened (the menu bar alone may be all there is)
+    var model: AppModel? { AppModel.shared }
+    /// when macOS said it is about to log out or power off (a logout that is then cancelled must not stay "on")
+    private var poweringOffAt: Date?
 
     func applicationDidFinishLaunching(_ n: Notification) {
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.willPowerOffNotification, object: nil, queue: .main) { [weak self] _ in
-            self?.loggingOut = true
+            self?.poweringOffAt = Date()
         }
+    }
+
+    /// Is this quit a logout, restart or shutdown? The quit's own reason says so; the power-off notice of the last
+    /// couple of minutes is the fallback.
+    private var isLoggingOut: Bool {
+        if let reason = NSAppleEventManager.shared().currentAppleEvent?.attributeDescriptor(forKeyword: kAEQuitReason)?.enumCodeValue {
+            return [kAELogOut, kAEReallyLogOut, kAEShowRestartDialog, kAERestart, kAEShowShutdownDialog, kAEShutDown].map { OSType($0) }.contains(reason)
+        }
+        if let t = poweringOffAt { return Date().timeIntervalSince(t) < 120 }
+        return false
     }
 
     // closing the window leaves App Starter in the menu bar
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { false }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard loggingOut, let model, model.stopsAtLogout else { return .terminateNow }
+        guard isLoggingOut, let model, model.stopsAtLogout else { return .terminateNow }
         // macOS waits while we stop them (it gives up on its own after a while)
         MainActor.assumeIsolated { model.stopForLogout { NSApp.reply(toApplicationShouldTerminate: true) } }
         return .terminateLater

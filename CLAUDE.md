@@ -29,9 +29,11 @@ a developer: every message is a plain sentence.
 3. **Order:** steps run one after another; a sub-bundle (one level only) runs its apps in parallel; every app in a step
    must be up (down) before the next step. Stop order = reverse unless `stopOrder` is set. Next step waits for the health
    check; no check → the command finishing. Each app has its own wait (default 60 s).
-4. **Failure** pauses the run: Retry / Skip it and go on / Stop what started (only what THIS run started). Nobody to
-   answer (login, logout) → skip.
-5. **Commands:** run as the user, in their login shell, in the optional working folder; **several lines** allowed
+4. **Failure** pauses the run: Retry / Skip it and go on / Stop what started (only what THIS run started, plus a
+   kept-running app it left going). Retry never starts a second copy of a kept-running app. Nobody to answer
+   (login, logout) → skip (`run(..., unattended: true)`). **Cancel** = stop waiting; never kill what is starting.
+5. **Commands:** run as the user, in their login shell (`-l -c`, with `~/.zshrc` / `~/.bashrc` sourced quietly first —
+   Matt's PATH lines live there), in the optional working folder; **several lines** allowed
    (Matt asked); each command in its own process group; output into the log file directly (never a pipe — a kept-running
    app must survive App Starter quitting). `APPSTARTER_*` variables are never passed on.
 6. **Two run modes:** starts itself in the background (needs a stop command) / App Starter keeps it running (no stop
@@ -47,7 +49,13 @@ a developer: every message is a plain sentence.
     Starter (apps keep running). Closing the window keeps the app in the menu bar. `MenuBarExtra(isInserted:)` must get a
     binding that writes only real changes — writing the same value back looped the scene graph and crashed at launch.
 11. **Login/logout:** "Open App Starter at login" is a toggle (SMAppService); each bundle can start at login (once per login
-    session — `LoginSession.current`) and stop at logout/restart/shutdown (`applicationShouldTerminate` → `.terminateLater`).
+    session — `LoginSession.current` uses `CGSSessionUniqueSessionUUID`; `kCGSSessionIDKey` doesn't exist on recent macOS)
+    and stop at logout/restart/shutdown (`applicationShouldTerminate` → `.terminateLater`, logout told by the quit's
+    `kAEQuitReason`; the delegate reaches the model through `AppModel.shared`, not the window).
+11a. **Files are never lost:** a damaged bundles.json / unreadable secrets are moved aside (`*.unreadable-<date>`); after
+    any load trouble the model skips pruning logs/state and skips autostart. Import → Replace keeps local secret values.
+    state.json is written under its lock (parallel starts). Info.plist has `NSAllowsArbitraryLoads` ONLY (with
+    `NSAllowsLocalNetworking` beside it macOS ignores it — reproduced).
 12. **Confirm before stopping a bundle** (names its apps); confirm buttons have no destructive role, Cancel is default
     (data_syncer rule 14a).
 13. **Scripts:** BUILD_APP.sh / INSTALL_APP.sh like data_syncer's; idempotent, plain-spoken. **Commits:** one per feature

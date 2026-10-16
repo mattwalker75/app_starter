@@ -83,6 +83,16 @@ public enum Shell {
         return "/bin/zsh"
     }
 
+    /// A login shell reads ~/.zprofile (bash: ~/.bash_profile) but not ~/.zshrc — and many people (Matt included) put
+    /// PATH lines there (conda, LM Studio, ~/.local/bin). So, as in Terminal, the shell's rc file is read too, quietly.
+    static func rcPrefix(_ shell: String) -> String {
+        switch (shell as NSString).lastPathComponent {
+        case "zsh": return "[ -r \"${ZDOTDIR:-$HOME}/.zshrc\" ] && source \"${ZDOTDIR:-$HOME}/.zshrc\" >/dev/null 2>&1 </dev/null\n"
+        case "bash": return "[ -r \"$HOME/.bashrc\" ] && source \"$HOME/.bashrc\" >/dev/null 2>&1 </dev/null\n"
+        default: return ""
+        }
+    }
+
     /// The environment a command gets: App Starter's own (a login shell fills in PATH and the rest) plus the app's variables.
     static func environment(_ extra: [String: String]) -> [String] {
         var env = ProcessInfo.processInfo.environment
@@ -120,7 +130,7 @@ public enum Shell {
         else { posix_spawn_file_actions_addchdir_np(&fa, NSHomeDirectory()) }
 
         let shell = loginShell
-        let args = [shell, "-l", "-c", command.script]
+        let args = [shell, "-l", "-c", rcPrefix(shell) + command.script]
         let envs = environment(command.env)
         var pid: pid_t = 0
         let rc = withCStrings(args) { argv in withCStrings(envs) { envp in posix_spawn(&pid, shell, &fa, &attr, argv, envp) } }
@@ -137,13 +147,16 @@ public enum Shell {
 
     /// Runs a command and waits for it, up to `timeout` seconds (then it is stopped). The output goes to `log`, or
     /// is captured and returned when `log` is nil.
-    public static func run(_ command: Command, log: URL?, timeout: Double) async -> Result {
+    /// `leaveOnCancel`: when the task is cancelled, stop waiting but leave the command running (Cancel means "stop
+    /// waiting", never "kill what is starting"); otherwise it is stopped like a command that ran out of time.
+    public static func run(_ command: Command, log: URL?, timeout: Double, leaveOnCancel: Bool = false) async -> Result {
         let capture = log == nil ? FileManager.default.temporaryDirectory.appendingPathComponent("appstarter-\(UUID().uuidString).out") : nil
         defer { if let c = capture { try? FileManager.default.removeItem(at: c) } }
         let p: Spawned
         do { p = try spawn(command, output: log ?? capture!) }
         catch { return Result(ending: nil, timedOut: false, output: (error as? ASError)?.message ?? error.localizedDescription) }
         var ending = await p.wait(upTo: timeout)
+        if ending == nil && leaveOnCancel && Task.isCancelled { return Result(ending: nil, timedOut: false, output: "cancelled") }
         var timedOut = false
         if ending == nil {
             timedOut = true
@@ -156,13 +169,25 @@ public enum Shell {
         return Result(ending: ending, timedOut: timedOut, output: out)
     }
 
-    /// Asks a process group to stop (SIGTERM), and forces it (SIGKILL) after `grace` seconds.
+    /// Asks a process group to stop (SIGTERM), and forces it (SIGKILL) after `grace` seconds. It waits for the whole
+    /// group, not just the first process: a script's shell may end at once while what it started takes its time (or
+    /// ignores the request) — that must still be forced.
     @discardableResult
     public static func stop(_ p: Spawned, grace: Double) async -> Ending? {
-        p.signal(SIGTERM)
-        if let e = await p.wait(upTo: grace) { return e }
-        p.signal(SIGKILL)
-        return await p.wait(upTo: 2)
+        await stopGroup(p.pid, grace: grace)
+        return await p.wait(upTo: 1)
+    }
+
+    public static func stopGroup(_ pgid: pid_t, grace: Double) async {
+        signalGroup(pgid, SIGTERM)
+        let until = Date().addingTimeInterval(grace)
+        // a cancelled task still finishes this (never leave a half-stopped group), but without spinning: plain sleeps
+        while groupAlive(pgid) && Date() < until { usleep(100_000); await Task.yield() }
+        if groupAlive(pgid) {
+            signalGroup(pgid, SIGKILL)
+            let hard = Date().addingTimeInterval(2)
+            while groupAlive(pgid) && Date() < hard { usleep(50_000); await Task.yield() }
+        }
     }
 
     public static func signalGroup(_ pgid: pid_t, _ sig: Int32) {

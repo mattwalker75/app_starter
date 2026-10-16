@@ -30,7 +30,8 @@ struct GroupNameSheet: View {
     @Environment(\.dismiss) private var dismiss
     let bundleId: UUID
     let step: Step?
-    @State private var name = ""
+    @State private var name: String
+    init(bundleId: UUID, step: Step?) { self.bundleId = bundleId; self.step = step; _name = State(initialValue: step?.name ?? "") }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(step == nil ? "New sub-bundle" : "Rename sub-bundle").font(DS.heading)
@@ -48,7 +49,6 @@ struct GroupNameSheet: View {
             }
         }
         .padding(20).frame(width: 460)
-        .onAppear { name = step?.name ?? "" }
     }
 }
 
@@ -94,9 +94,13 @@ struct BundleEditor: View {
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Save") {
-                    bundle.name = bundle.name.trimmingCharacters(in: .whitespaces)
-                    bundle.stopOrder = customStop ? order.map(\.id) : nil
-                    model.updateBundle(bundle); dismiss()
+                    // only what this sheet edits goes onto the bundle as it is NOW (steps, login switches in
+                    // Settings or an import may have changed it while the sheet was open)
+                    guard var now = model.bundle(bundle.id) else { dismiss(); return }
+                    now.name = bundle.name.trimmingCharacters(in: .whitespaces)
+                    now.startAtLogin = bundle.startAtLogin; now.stopAtLogout = bundle.stopAtLogout
+                    now.stopOrder = customStop ? order.map(\.id).filter { id in now.steps.contains { $0.id == id } } : nil
+                    model.updateBundle(now); dismiss()
                 }
                 .keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent).disabled(bundle.name.trimmingCharacters(in: .whitespaces).isEmpty)
             }

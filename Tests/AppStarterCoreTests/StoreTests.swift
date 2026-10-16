@@ -22,12 +22,13 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(loaded, [b])
     }
 
-    func testAMissingKeyIsAPlainProblem() throws {
+    func testAMissingKeyIsAPlainProblemAndTheBundlesStillLoad() throws {
         let s = Scratch()
         let store = BundleStore(folder: s.url)
         try store.save([AppBundle(name: "B", steps: [Step(app: AppItem(name: "A", start: "x", stop: "y", env: [EnvVar(name: "K", value: "v", secret: true)]))])])
         try FileManager.default.removeItem(atPath: s.file("secret.key"))
-        XCTAssertThrowsError(try store.load()) { XCTAssertTrue(($0 as? ASError)?.message.contains("key") == true) }
+        XCTAssertEqual(try store.load().count, 1)
+        XCTAssertTrue(store.problem?.contains("key") == true)
     }
 
     func testStopOrderIsTheReverseUnlessSet() {

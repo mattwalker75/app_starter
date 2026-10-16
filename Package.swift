@@ -16,6 +16,8 @@ let package = Package(
         // The SwiftUI app (the window, the menu bar item, Settings). Thin: it drives the core and shows what it reports.
         .executableTarget(name: "AppStarter", dependencies: ["AppStarterCore"], path: "Sources/AppStarter"),
         .testTarget(name: "AppStarterCoreTests", dependencies: ["AppStarterCore"], path: "Tests/AppStarterCoreTests"),
+        // the app's own logic (AppModel: placing apps, steps, login/logout, import) on a scratch APPSTARTER_HOME
+        .testTarget(name: "AppStarterTests", dependencies: ["AppStarter", "AppStarterCore"], path: "Tests/AppStarterTests"),
     ],
     swiftLanguageVersions: [.v5]
 )

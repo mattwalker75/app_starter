@@ -27,11 +27,18 @@ public final class AppLogs: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         let u = url(app.id)
         trimIfNeeded(u)
-        if let h = try? FileHandle(forWritingTo: u) {
-            h.seekToEndOfFile(); h.write(Data(lines.utf8)); try? h.close()
-        } else {
-            FileManager.default.createFile(atPath: u.path, contents: Data(lines.utf8), attributes: [.posixPermissions: 0o600])
-        }
+        // O_APPEND, like the commands' own output: two writers at once never overwrite each other
+        let fd = open(u.path, O_WRONLY | O_APPEND | O_CREAT, 0o600)
+        guard fd >= 0 else { return }
+        let h = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        h.write(Data(lines.utf8)); try? h.close()
+    }
+
+    /// Trims every log that has grown past the limit — called with each round of status checks, because an app App
+    /// Starter keeps running writes to its log all the time, not only when App Starter does.
+    public func trimAll() {
+        lock.lock(); defer { lock.unlock() }
+        for f in (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [] where f.pathExtension == "log" { trimIfNeeded(f) }
     }
 
     /// The newest part of an app's log (up to `bytes`).
@@ -67,7 +74,12 @@ public final class AppLogs: @unchecked Sendable {
         h.seek(toFileOffset: UInt64(size - maxBytes / 2))
         var keep = h.readDataToEndOfFile(); try? h.close()
         if let nl = keep.firstIndex(of: 0x0A) { keep = keep.subdata(in: keep.index(after: nl)..<keep.endIndex) }
-        // written in place (not replaced): a kept-running app still has this file open for its output
-        if let w = try? FileHandle(forWritingTo: u) { w.truncateFile(atOffset: 0); w.write(Data("[… older lines removed …]\n".utf8) + keep); try? w.close() }
+        // written in place (not replaced): a kept-running app still has this file open for its output (with O_APPEND,
+        // so after the cut its next line lands at the new end)
+        let fd = open(u.path, O_WRONLY | O_APPEND, 0)
+        guard fd >= 0 else { return }
+        ftruncate(fd, 0)
+        let w = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        w.write(Data("[… older lines removed …]\n".utf8) + keep); try? w.close()
     }
 }

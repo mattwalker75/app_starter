@@ -69,7 +69,8 @@ else
     xcode-select --install 2>/dev/null || true
     echo "When the installer finishes, run ./INSTALL_APP.sh again."
   fi
-  exit 1
+  # --check still reports on the app (it needs no compiler to look at it)
+  [[ $CHECK_ONLY -eq 1 ]] || exit 1
 fi
 if [[ $CHECK_ONLY -eq 1 ]]; then
   [[ -d "build/App Starter.app" ]] && ok "App built (build/App Starter.app)" || warn "App not built yet"
@@ -90,7 +91,9 @@ if [[ $SKIP_TESTS -eq 1 ]]; then
 else
   info "Running the tests (under a minute)…"
   if swift test > build/test.log 2>&1; then
-    ok "Tests pass ($(grep -E '^\s*Executed [0-9]+ tests' build/test.log | tail -1 | sed -E 's/.*Executed ([0-9]+) tests.*/\1/') tests)"
+    # two test bundles (the engine, the app): add up the "All tests" totals of each
+    total="$(grep -A1 "Test Suite 'All tests' passed" build/test.log | sed -nE 's/.*Executed ([0-9]+) tests.*/\1/p' | awk '{s+=$1} END {print s+0}')"
+    ok "Tests pass ($total tests)"
   else
     warn "Some tests failed — see build/test.log:"
     grep -E "error:|Fatal error" build/test.log | head -5 | sed 's/^/    /'
@@ -100,17 +103,35 @@ fi
 # ---- build
 ./BUILD_APP.sh ${BUILD_ARGS[@]+"${BUILD_ARGS[@]}"} || { err "The build failed."; exit 1; }
 # ---- install
+# the copy being replaced may be open: an open app's files can be deleted, but it keeps running the old version
+running_old() { pgrep -f "$TARGET/Contents/MacOS/App Starter" >/dev/null 2>&1; }
+REOPEN=0
 if [[ $COPY -eq 1 ]]; then
   if [[ -d "$TARGET" ]]; then
-    if confirm "Replace the App Starter already in $DEST? (Close it first if it is open — your apps keep running.)"; then
-      rm -rf "$TARGET" || { err "Could not remove the old app in $DEST (is it open, or is the folder read-only?)."; exit 1; }
+    if confirm "Replace the App Starter already in $DEST?"; then
+      if running_old; then
+        if confirm "App Starter is open. Close it so the new version can be installed? (Your apps keep running.)"; then
+          osascript -e 'quit app id "com.mattwalker.appstarter"' >/dev/null 2>&1 || true
+          for _ in $(seq 1 20); do running_old || break; sleep 0.5; done
+          if running_old; then err "App Starter did not close. Close it from its menu bar item (Close App Starter) and run this again."; exit 1; fi
+          REOPEN=1
+        else
+          warn "Leaving the open copy alone: it keeps running the old version until you close and reopen it."
+        fi
+      fi
     else COPY=0; fi
   elif ! confirm "Copy App Starter.app to $DEST?"; then COPY=0; fi
 fi
 if [[ $COPY -eq 1 ]]; then
-  # ditto copies an app bundle exactly (Apple's recommended way)
-  ditto "build/App Starter.app" "$TARGET" || { err "Could not copy the app to $DEST."; exit 1; }
+  # ditto copies an app bundle exactly (Apple's recommended way) — first beside it, then swapped in, so a failed
+  # copy never leaves you with no app (or half of one)
+  NEW="$DEST/.App Starter.app.new"
+  rm -rf "$NEW"
+  ditto "build/App Starter.app" "$NEW" || { rm -rf "$NEW"; err "Could not copy the app to $DEST (the old one is untouched)."; exit 1; }
+  if [[ -d "$TARGET" ]]; then rm -rf "$TARGET" || { rm -rf "$NEW"; err "Could not remove the old app in $DEST (is the folder read-only?)."; exit 1; }; fi
+  mv "$NEW" "$TARGET" || { err "Could not put the new app in place in $DEST."; exit 1; }
   ok "Installed $TARGET"
+  if [[ $REOPEN -eq 1 ]]; then open "$TARGET" && ok "Opened the new App Starter"; fi
   echo; echo "Next:  open \"$TARGET\""
   [[ "$DEST" == "/Applications" ]] && echo "       (or find App Starter in Launchpad)"
   echo "       To use it on another Mac, copy the whole \"App Starter.app\" over, or install it there the same way."

@@ -69,12 +69,21 @@ final class AppModel: ObservableObject {
 
     let store = BundleStore()
     let engine = Engine()
+    /// the one model, for the app delegate (logout) — set before any window appears
+    nonisolated(unsafe) static weak var shared: AppModel?
+    /// the bundles (or their secrets) could not be read at launch: don't tidy away logs and process records of apps
+    /// that only seem to be gone, and don't autostart from a list that may be incomplete
+    private(set) var loadTrouble = false
+    /// a newer round of checks makes an older one's results stale
+    private var refreshRound = 0
     private var monitor: Task<Void, Never>?
     /// a run's changes are passed on, so the sidebar, the rows and the menu bar follow it too
     private var followers: [UUID: AnyCancellable] = [:]
 
     init() {
-        do { bundles = try store.load() } catch let e as ASError { notice = Notice(title: "The bundles could not be read", message: e.message) } catch {}
+        do { bundles = try store.load() } catch let e as ASError { loadTrouble = true; notice = Notice(title: "The bundles could not be read", message: e.message) } catch { loadTrouble = true }
+        if let p = store.problem { loadTrouble = true; notice = Notice(title: "The secret values could not be read", message: p) }
+        AppModel.shared = self
         selectedId = bundles.first?.id
         engine.logs.maxBytes = settings.logLimitMB * 1_000_000
         Theme.apply(settings)
@@ -89,6 +98,7 @@ final class AppModel: ObservableObject {
 
     func save() {
         do { try store.save(bundles) } catch { notice = Notice(title: "The bundles could not be saved", message: (error as? ASError)?.message ?? error.localizedDescription) }
+        guard !loadTrouble else { return }
         let ids = Set(bundles.flatMap(\.apps).map(\.id))
         engine.logs.prune(keeping: ids)
         engine.runtime.forget(keeping: ids)
@@ -128,9 +138,14 @@ final class AppModel: ObservableObject {
         if placement == .stay, let si = existed, let ai = b.steps[si].apps.firstIndex(where: { $0.id == app.id }) {
             b.steps[si].apps[ai] = app
         } else {
-            if let si = existed { b.steps[si].apps.removeAll { $0.id == app.id }; if !b.steps[si].isGroup && b.steps[si].apps.isEmpty { b.steps.remove(at: si) } }
+            var oldStepId: UUID?
+            if let si = existed {
+                b.steps[si].apps.removeAll { $0.id == app.id }
+                if !b.steps[si].isGroup && b.steps[si].apps.isEmpty { oldStepId = b.steps[si].id; b.steps.remove(at: si) }
+            }
             switch placement {
-            case .newStep, .stay: b.steps.append(Step(app: app))
+            // a one-app step that moves keeps its id, so its place in a custom stop order stays
+            case .newStep, .stay: b.steps.append(Step(id: oldStepId ?? UUID(), app: app))
             case .group(let gid):
                 if let gi = b.steps.firstIndex(where: { $0.id == gid }) { b.steps[gi].apps.append(app) } else { b.steps.append(Step(app: app)) }
             case .newGroup(let name): b.steps.append(Step(group: name, apps: [app]))
@@ -189,6 +204,9 @@ final class AppModel: ObservableObject {
 
     /// Checks every app (not those in a run going on now — that run reports them).
     func refreshStatus() async {
+        refreshRound += 1
+        let round = refreshRound
+        engine.logs.trimAll()
         let busy = Set(sessions.values.filter(\.isRunning).flatMap { $0.bundle.apps.map(\.id) })
         let apps = allApps.filter { !busy.contains($0.id) }
         let engine = self.engine
@@ -198,6 +216,8 @@ final class AppModel: ObservableObject {
             for await (id, ok) in g { r[id] = ok }
             return r
         }
+        // a cancelled round, or one overtaken by a newer round, must not overwrite fresher lights
+        guard !Task.isCancelled, round == refreshRound else { return }
         for (id, ok) in results { up[id] = ok }
         checkedAt = Date()
     }
@@ -219,13 +239,15 @@ final class AppModel: ObservableObject {
     var anyRunning: Bool { sessions.values.contains { $0.isRunning } }
 
     /// Starts (or stops) a bundle; `show` opens the progress sheet.
-    func run(_ b: AppBundle, _ phase: Phase, show: Bool = true) {
+    /// `unattended`: nobody is there to answer (login) — a failure is skipped instead of asked.
+    func run(_ b: AppBundle, _ phase: Phase, show: Bool = true, unattended: Bool = false) {
         guard !isRunning(b.id) else { if show { shownSession = sessions[b.id] }; return }
         guard !b.apps.isEmpty else { notice = Notice(title: "“\(b.name)” has no applications yet", message: "Add an application to it first."); return }
         launch(RunSession(bundle: b, phase: phase), show: show) { engine, s in
-            phase == .starting
-                ? await engine.start(b, events: { e in Task { @MainActor in s.handle(e) } }, decide: { f in await s.ask(f) })
-                : await engine.stop(b, events: { e in Task { @MainActor in s.handle(e) } }, decide: { f in await s.ask(f) })
+            let decide: @Sendable (Failure) async -> Choice = unattended ? { _ in .skip } : { f in await s.ask(f) }
+            return phase == .starting
+                ? await engine.start(b, events: { e in Task { @MainActor in s.handle(e) } }, decide: decide)
+                : await engine.stop(b, events: { e in Task { @MainActor in s.handle(e) } }, decide: decide)
         }
     }
 
@@ -241,6 +263,7 @@ final class AppModel: ObservableObject {
     }
 
     private func launch(_ s: RunSession, show: Bool, _ work: @escaping @Sendable (Engine, RunSession) async -> Outcome) {
+        if let old = sessions[s.bundle.id] { followers.removeValue(forKey: old.id) }
         sessions[s.bundle.id] = s
         followers[s.id] = s.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         if show { shownSession = s }
@@ -248,8 +271,7 @@ final class AppModel: ObservableObject {
         s.task = Task { [weak self] in
             let outcome = await work(engine, s)
             s.finish(outcome)
-            // the lights follow what the run did, then a fresh check
-            for (id, p) in s.progress { if case .done = p { self?.up[id] = s.phase == .starting } }
+            // the lights: a fresh check (it also knows what the run started or stopped)
             await self?.refreshStatus()
         }
     }
@@ -263,12 +285,13 @@ final class AppModel: ObservableObject {
 
     /// Starts the start-at-login bundles, once per login session (whether App Starter opened at login or later).
     func autostartIfNewLogin() async {
+        guard !loadTrouble else { return }
         let session = LoginSession.current
         guard engine.runtime.lastAutostartSession != session else { return }
         engine.runtime.lastAutostartSession = session
         // one after another, in the order they are listed; a failure is skipped (nobody is there to answer)
         for b in bundles where b.startAtLogin && !b.apps.isEmpty {
-            run(b, .starting, show: false)
+            run(b, .starting, show: false, unattended: true)
             await sessions[b.id]?.task?.value
         }
     }
@@ -285,6 +308,7 @@ final class AppModel: ObservableObject {
             for b in todo {
                 sessions[b.id]?.cancel()
                 let s = RunSession(bundle: b, phase: .stopping)
+                if let old = sessions[b.id] { followers.removeValue(forKey: old.id) }
                 sessions[b.id] = s
                 followers[s.id] = s.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
                 let o = await engine.stop(b, events: { e in Task { @MainActor in s.handle(e) } }, decide: { _ in .skip })
@@ -301,7 +325,7 @@ final class AppModel: ObservableObject {
     func exportData(includeSecrets: Bool) throws -> Data { try Transfer.export(bundles, includeSecrets: includeSecrets) }
 
     func importFile(_ f: ExportFile, replace: Bool) {
-        bundles = Transfer.merge(f.bundles, into: bundles, replace: replace)
+        bundles = Transfer.merge(f.bundles, into: bundles, replace: replace, secretsIncluded: f.secretsIncluded)
         if selectedId == nil { selectedId = bundles.first?.id }
         save()
     }
@@ -323,8 +347,13 @@ enum LoginSession {
         var boot = timeval(); var size = MemoryLayout<timeval>.size
         var mib: [Int32] = [CTL_KERN, KERN_BOOTTIME]
         sysctl(&mib, 2, &boot, &size, nil, 0)
-        let dict = CGSessionCopyCurrentDictionary() as? [String: Any]
-        let sid = (dict?["kCGSSessionIDKey"] as? Int).map(String.init) ?? "?"
+        // a new value per login: the session's own id (kCGSSessionIDKey is not there on recent macOS — found in review)
+        let dict = CGSessionCopyCurrentDictionary() as? [String: Any] ?? [:]
+        let sid = (dict["CGSSessionUniqueSessionUUID"] as? String)
+            ?? (dict["kCGSSessionAuditIDKey"] as? NSNumber)?.stringValue
+            ?? (dict["kSCSecuritySessionID"] as? NSNumber)?.stringValue
+            ?? (dict["kCGSSessionIDKey"] as? NSNumber)?.stringValue
+            ?? "?"
         return "\(boot.tv_sec)-\(sid)"
     }
 }

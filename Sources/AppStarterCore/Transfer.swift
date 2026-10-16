@@ -31,14 +31,31 @@ public enum Transfer {
 
     /// The bundles after an import: ones with the same id as an existing bundle replace it (`replace` true) or
     /// come in as copies with new ids; the rest are added.
-    public static func merge(_ incoming: [AppBundle], into existing: [AppBundle], replace: Bool) -> [AppBundle] {
+    /// `secretsIncluded` false (an export without them): a replaced bundle keeps the secret values it already had
+    /// (matched by variable, or by app and variable name), instead of losing them to the file's blanks.
+    public static func merge(_ incoming: [AppBundle], into existing: [AppBundle], replace: Bool, secretsIncluded: Bool = true) -> [AppBundle] {
         var out = existing
         for b in incoming {
             if let i = out.firstIndex(where: { $0.id == b.id }) {
-                if replace { out[i] = b } else { out.append(freshCopy(b, name: b.name + " (imported)")) }
+                if replace { out[i] = secretsIncluded ? b : keepingSecrets(of: out[i], in: b) }
+                else { out.append(freshCopy(b, name: b.name + " (imported)")) }
             } else { out.append(b) }
         }
         return out
+    }
+
+    static func keepingSecrets(of old: AppBundle, in new: AppBundle) -> AppBundle {
+        var byId: [UUID: String] = [:], byName: [String: String] = [:]
+        for a in old.apps { for v in a.env where v.secret { byId[v.id] = v.value; byName[a.name + "\u{0}" + v.name] = v.value } }
+        var b = new
+        for s in b.steps.indices { for a in b.steps[s].apps.indices {
+            let appName = b.steps[s].apps[a].name
+            for v in b.steps[s].apps[a].env.indices where b.steps[s].apps[a].env[v].secret && b.steps[s].apps[a].env[v].value.isEmpty {
+                let ev = b.steps[s].apps[a].env[v]
+                b.steps[s].apps[a].env[v].value = byId[ev.id] ?? byName[appName + "\u{0}" + ev.name] ?? ""
+            }
+        } }
+        return b
     }
 
     /// The same bundle with new ids everywhere (steps, apps, variables), so it shares nothing with the original.

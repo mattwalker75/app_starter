@@ -116,8 +116,10 @@ public final class Engine: @unchecked Sendable {
                     for r in failed { events(.app(r.app.id, .skipped)) }
                     skipped += failed.map(\.app.name)
                 case .giveUp:
-                    // stop what this run started, the newest first
-                    for a in started.reversed() { _ = await stopApp(a, events: events) }
+                    // stop what this run started, the newest first — including a kept-running app whose check failed
+                    // but whose process this run left going
+                    let leftRunning = failed.map(\.app).filter { $0.mode == .keepRunning && runtime.processAlive($0.id) }
+                    for a in (started + leftRunning).reversed() { _ = await stopApp(a, events: events) }
                     return .gaveUp
                 }
                 if choice != .retry { break }
@@ -167,9 +169,6 @@ public final class Engine: @unchecked Sendable {
     }
 
     public func startApp(_ app: AppItem, events: @escaping @Sendable (RunEvent) -> Void = { _ in }) async -> AppResult {
-        let began = Date()
-        let deadline = began.addingTimeInterval(Double(app.waitSeconds))
-        func took() -> String { Self.duration(Date().timeIntervalSince(began)) }
         func fail(_ why: String) -> AppResult {
             logs.note(app, "Did not start: \(why)")
             events(.app(app.id, .failed(why)))
@@ -179,40 +178,58 @@ public final class Engine: @unchecked Sendable {
         // already up? (only when that can really be told: a check that can be run, or our own live process)
         let alreadyUp: Bool
         if app.mode == .keepRunning { alreadyUp = runtime.processAlive(app.id) ? (await Health.poll(app) ?? true) : false }
-        else { alreadyUp = await Health.poll(app) == true }
+        // no check that can be run: what App Starter knows (its light is green) — "Start the rest" leaves it alone
+        else { alreadyUp = await Health.poll(app) ?? runtime[app.id].started }
         if alreadyUp {
             events(.app(app.id, .done("was already running")))
             return AppResult(app: app, ok: true, already: true, note: "was already running")
         }
 
+        // the wait starts now, not before that first look (a slow check must not eat the start command's time)
+        let began = Date()
+        let deadline = began.addingTimeInterval(Double(app.waitSeconds))
+        func took() -> String { Self.duration(Date().timeIntervalSince(began)) }
+        func left() -> Double { max(0.5, deadline.timeIntervalSinceNow) }
+
         events(.app(app.id, .working("starting…")))
-        logs.note(app, "── Starting \(app.name)\(app.resolvedFolder.map { " (in \($0))" } ?? "") ──\n\(app.start)")
         let cmd = Command(app.start, for: app)
 
         switch app.mode {
         case .keepRunning:
-            let p: Spawned
-            do { p = try Shell.spawn(cmd, output: logs.url(app.id)) } catch { return fail((error as? ASError)?.message ?? error.localizedDescription) }
-            runtime.keep(app.id, p)
+            // gone = the process and everything it started have ended (a leader that hands over to children still counts)
+            func gone() -> String? {
+                if runtime.processAlive(app.id) { return nil }
+                let how = runtime.liveProcess(app.id)?.finished?.text
+                runtime.forgetProcess(app.id)
+                return how ?? "it ended"
+            }
+            if runtime.processAlive(app.id), let pid = runtime[app.id].pid {
+                // a retry: the process from the last try is still going — wait for it again rather than start a second copy
+                logs.note(app, "── \(app.name) is still running from the last try (process \(pid)): waiting for it again ──")
+            } else {
+                logs.note(app, "── Starting \(app.name)\(app.resolvedFolder.map { " (in \($0))" } ?? "") ──\n\(app.start)")
+                do { runtime.keep(app.id, try Shell.spawn(cmd, output: logs.url(app.id))) }
+                catch { return fail((error as? ASError)?.message ?? error.localizedDescription) }
+            }
             if app.health.canPoll {
-                while Date() < deadline {
+                while true {
                     if Task.isCancelled { return fail("cancelled") }
-                    if let e = p.finished { runtime.forgetProcess(app.id); return fail("it stopped by itself (\(e.text))") }
+                    if let how = gone() { return fail("it stopped by itself (\(how))") }
                     events(.app(app.id, .working("waiting for the check · \(took())")))
-                    if await Health.poll(app) == true { break }
+                    if await Health.poll(app, timeout: left()) == true { break }
+                    if Date() >= deadline { return fail("the health check did not pass within \(app.waitSeconds) s (it is still running: Retry waits for it again, or stop it)") }
                     try? await Task.sleep(nanoseconds: UInt64(pollEvery * 1e9))
                 }
-                if Date() >= deadline, await Health.poll(app) != true { return fail("the health check did not pass within \(app.waitSeconds) s (it keeps running; stop it or retry)") }
             } else {
                 // no check that can be run: it counts as up when it is still running after a moment
-                if let e = await p.wait(upTo: settleSeconds) {
-                    runtime.forgetProcess(app.id)
-                    return fail("it finished at once (\(e.text)) — a kept-running app should keep running")
-                }
+                try? await Task.sleep(nanoseconds: UInt64(settleSeconds * 1e9))
+                if Task.isCancelled { return fail("cancelled") }
+                if let how = gone() { return fail("it finished at once (\(how)) — a kept-running app should keep running") }
             }
 
         case .startsItself:
-            let r = await Shell.run(cmd, log: logs.url(app.id), timeout: max(1, deadline.timeIntervalSinceNow))
+            logs.note(app, "── Starting \(app.name)\(app.resolvedFolder.map { " (in \($0))" } ?? "") ──\n\(app.start)")
+            let r = await Shell.run(cmd, log: logs.url(app.id), timeout: left(), leaveOnCancel: true)
             if Task.isCancelled { return fail("cancelled") }
             if r.timedOut { return fail("the start command did not finish within \(app.waitSeconds) s, so it was stopped") }
             guard let ending = r.ending else { return fail(r.output) }
@@ -221,7 +238,7 @@ public final class Engine: @unchecked Sendable {
             if app.health.canPoll {
                 while true {
                     if Task.isCancelled { return fail("cancelled") }
-                    if await Health.poll(app) == true { break }
+                    if await Health.poll(app, timeout: left()) == true { break }
                     if Date() >= deadline { return fail("the health check did not pass within \(app.waitSeconds) s") }
                     events(.app(app.id, .working("waiting for the check · \(took())")))
                     try? await Task.sleep(nanoseconds: UInt64(pollEvery * 1e9))
@@ -236,9 +253,10 @@ public final class Engine: @unchecked Sendable {
     }
 
     public func stopApp(_ app: AppItem, events: @escaping @Sendable (RunEvent) -> Void = { _ in }) async -> AppResult {
-        let began = Date()
-        let deadline = began.addingTimeInterval(Double(app.waitSeconds))
+        var began = Date()
+        var deadline = began.addingTimeInterval(Double(app.waitSeconds))
         func took() -> String { Self.duration(Date().timeIntervalSince(began)) }
+        func left() -> Double { max(0.5, deadline.timeIntervalSinceNow) }
         func fail(_ why: String) -> AppResult {
             logs.note(app, "Did not stop: \(why)")
             events(.app(app.id, .failed(why)))
@@ -262,10 +280,12 @@ public final class Engine: @unchecked Sendable {
             return AppResult(app: app, ok: true, already: true, note: "was not running")
         }
 
+        // the wait starts now, after the first look
+        began = Date(); deadline = began.addingTimeInterval(Double(app.waitSeconds))
         events(.app(app.id, .working("stopping…")))
         if hasStop {
             logs.note(app, "── Stopping \(app.name) ──\n\(app.stop)")
-            let r = await Shell.run(Command(app.stop, for: app), log: logs.url(app.id), timeout: max(1, deadline.timeIntervalSinceNow))
+            let r = await Shell.run(Command(app.stop, for: app), log: logs.url(app.id), timeout: left(), leaveOnCancel: true)
             if Task.isCancelled { return fail("cancelled") }
             if r.timedOut { return fail("the stop command did not finish within \(app.waitSeconds) s, so it was stopped") }
             guard let ending = r.ending else { return fail(r.output) }
@@ -285,13 +305,8 @@ public final class Engine: @unchecked Sendable {
                 try? await Task.sleep(nanoseconds: UInt64(pollEvery * 1e9))
             }
             if runtime.processAlive(app.id), let pid = runtime[app.id].pid {
-                if let p = runtime.liveProcess(app.id) { await Shell.stop(p, grace: stopGrace) }
-                else {
-                    Shell.signalGroup(pid, SIGTERM)
-                    let until = Date().addingTimeInterval(stopGrace)
-                    while Shell.groupAlive(pid) && Date() < until { try? await Task.sleep(nanoseconds: 200_000_000) }
-                    if Shell.groupAlive(pid) { Shell.signalGroup(pid, SIGKILL) }
-                }
+                // ask the whole group (the command and what it started) to quit, then force what is left
+                await Shell.stopGroup(pid, grace: stopGrace)
             }
             if runtime.processAlive(app.id) { return fail("it is still running") }
             runtime.forgetProcess(app.id)
@@ -299,7 +314,7 @@ public final class Engine: @unchecked Sendable {
         if app.health.canPoll {
             while true {
                 if Task.isCancelled { return fail("cancelled") }
-                if await Health.poll(app) == false { break }
+                if await Health.poll(app, timeout: left()) == false { break }
                 if Date() >= deadline { return fail("the health check still passes after \(app.waitSeconds) s, so it seems to be running") }
                 events(.app(app.id, .working("waiting for it to go down · \(took())")))
                 try? await Task.sleep(nanoseconds: UInt64(pollEvery * 1e9))

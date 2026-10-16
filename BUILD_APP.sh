@@ -98,7 +98,9 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>NSRemovableVolumesUsageDescription</key><string>App Starter runs your apps' start and stop commands, which may be on an external drive.</string>
   <key>NSNetworkVolumesUsageDescription</key><string>App Starter runs your apps' start and stop commands, which may be on a network share.</string>
   <!-- a URL health check is your own address, often plain http:// on a Tailscale or LAN name: allow them all -->
-  <key>NSAppTransportSecurity</key><dict><key>NSAllowsArbitraryLoads</key><true/><key>NSAllowsLocalNetworking</key><true/></dict>
+  <!-- only NSAllowsArbitraryLoads: with NSAllowsLocalNetworking present macOS ignores it (reproduced in review) -->
+  <key>NSAppTransportSecurity</key><dict><key>NSAllowsArbitraryLoads</key><true/></dict>
+  <key>NSAppleEventsUsageDescription</key><string>App Starter runs your apps' start and stop commands, which may control other apps (for example osascript -e 'quit app "Docker"').</string>
 </dict>
 </plist>
 PLIST

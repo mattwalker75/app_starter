@@ -27,6 +27,17 @@ enum JSON {
     static let decoder: JSONDecoder = { let d = JSONDecoder(); d.dateDecodingStrategy = .iso8601; return d }()
 }
 
+extension BundleStore {
+    /// Renames a file to "<name>.unreadable-<date>" beside it; returns the new name.
+    @discardableResult
+    static func moveAside(_ u: URL) -> String? {
+        guard FileManager.default.fileExists(atPath: u.path) else { return nil }
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd-HHmmss"; f.locale = Locale(identifier: "en_US_POSIX")
+        let name = "\(u.lastPathComponent).unreadable-\(f.string(from: Date()))"
+        do { try FileManager.default.moveItem(at: u, to: u.deletingLastPathComponent().appendingPathComponent(name)); return name } catch { return nil }
+    }
+}
+
 public struct BundlesFile: Codable, Equatable, Sendable {
     public var version = 1
     public var bundles: [AppBundle]
@@ -38,18 +49,31 @@ public final class BundleStore: @unchecked Sendable {
     public let folder: URL
     public var url: URL { folder.appendingPathComponent("bundles.json") }
     public let secrets: SecretBox
+    /// a warning from the last load that did not stop it (the secret values could not be read)
+    public private(set) var problem: String?
 
     public init(folder: URL = Home.folder()) {
         self.folder = folder
         secrets = SecretBox(folder: folder)
     }
 
+    /// Loads the bundles. A damaged bundles.json is moved aside (never overwritten by the next save) and reported;
+    /// unreadable secret values are moved aside too and the bundles load without them (`problem` says so).
     public func load() throws -> [AppBundle] {
+        problem = nil
         guard FileManager.default.fileExists(atPath: url.path) else { return [] }
         var bundles: [AppBundle]
         do { bundles = try JSON.decoder.decode(BundlesFile.self, from: Data(contentsOf: url)).bundles }
-        catch { throw ASError("The bundles file \(url.path) could not be read: \(error.localizedDescription). Fix it, or move it aside to start with no bundles.") }
-        let values = try secrets.load()
+        catch {
+            let aside = Self.moveAside(url)
+            throw ASError("The bundles file could not be read (\(error.localizedDescription)). It was kept as \(aside ?? url.lastPathComponent) in \(folder.path), so nothing is lost; App Starter starts with no bundles. Put it back once it is fixed, or Import a backup.")
+        }
+        var values: [String: String] = [:]
+        do { values = try secrets.load() }
+        catch {
+            let a = Self.moveAside(secrets.dataURL), k = Self.moveAside(secrets.keyURL)
+            problem = "\((error as? ASError)?.message ?? error.localizedDescription) The old files were kept as \([a, k].compactMap { $0 }.joined(separator: " and ")). Your bundles loaded without their secret values: type them again in each app's editor."
+        }
         for b in bundles.indices { for s in bundles[b].steps.indices { for a in bundles[b].steps[s].apps.indices {
             for v in bundles[b].steps[s].apps[a].env.indices where bundles[b].steps[s].apps[a].env[v].secret {
                 bundles[b].steps[s].apps[a].env[v].value = values[bundles[b].steps[s].apps[a].env[v].id.uuidString] ?? ""

@@ -8,6 +8,7 @@ struct SettingsView: View {
     @EnvironmentObject var model: AppModel
     @State private var loginItem = LoginItem.isOn
     @State private var loginProblem: String?
+    @State private var confirmClearLogs = false
 
     var body: some View {
         TabView(selection: $model.settingsTab) {
@@ -82,7 +83,11 @@ struct SettingsView: View {
                 .font(DS.secondary).foregroundStyle(.secondary)
             HStack {
                 Button("Show the logs folder") { NSWorkspace.shared.open(model.engine.logs.folder) }
-                Button("Clear every log…") { model.engine.logs.clearAll() }
+                Button("Clear every log…") { confirmClearLogs = true }
+                    .confirmationDialog("Clear every app's log?", isPresented: $confirmClearLogs, titleVisibility: .visible) {
+                        Button("Clear logs") { model.engine.logs.clearAll() }
+                        Button("Cancel", role: .cancel) {}.keyboardShortcut(.defaultAction)
+                    }
             }
         }
         .formStyle(.grouped)

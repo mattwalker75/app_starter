@@ -26,10 +26,11 @@ public enum Health {
     }
 
     /// The health check, run now (for checks that can be run again). nil = this app's check can't be run on its own.
-    public static func poll(_ app: AppItem) async -> Bool? {
+    /// `timeout` caps how long this one look may take (the time left before a deadline); nil = the usual 3 s / 15 s.
+    public static func poll(_ app: AppItem, timeout: Double? = nil) async -> Bool? {
         switch app.health {
-        case .url(let u): return await urlAnswers(u)
-        case .output(let c, let t, let i): return await outputContains(Command(c, for: app), text: t, ignoreCase: i)
+        case .url(let u): return await urlAnswers(u, timeout: min(3, timeout ?? 3))
+        case .output(let c, let t, let i): return await outputContains(Command(c, for: app), text: t, ignoreCase: i, timeout: min(15, timeout ?? 15))
         case .none, .returnCode: return nil
         }
     }

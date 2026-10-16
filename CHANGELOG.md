@@ -4,6 +4,42 @@ All notable changes to App Starter (Keep a Changelog style; dates are when the c
 
 ## [0.1.0] — unreleased
 
+### Fixed
+- 2026-10-16: **Code review and deeper testing** (three reviewers; every finding reproduced or read in the code
+  before fixing; a test for each). The engine:
+  - Two apps of a sub-bundle starting at once could lose one's process number from state.json.
+  - Stopping a kept-running multi-line command now waits for, and forces, everything it started (it used to give up
+    once the shell itself had quit).
+  - **Retry** after a failed check waits for the same process instead of starting a second copy; **Stop what
+    started** also stops a kept-running app whose check failed.
+  - A kept-running command that hands over to a child (and ends) still counts as running and is stopped properly.
+  - The wait starts after the first "already up?" look, and each look is held to the time left.
+  - A damaged bundles.json is kept aside (never overwritten by the next save); unreadable secret values no longer
+    stop the bundles loading (they are kept aside, and you are told to type them again).
+  - Import → Replace keeps the secret values already on this Mac when the file has none.
+  - Commands read your `~/.zshrc` (bash: `~/.bashrc`) as Terminal does, so PATH lines there (conda, LM Studio,
+    ~/.local/bin) work; its output stays out of the log.
+  - **Cancel** stops waiting and leaves a command that is starting alone (it used to kill it and what it started).
+  - "Start the rest" no longer runs the start command of an app App Starter already started (no check that can be run).
+  - Logs are trimmed with every round of checks (a chatty kept-running app no longer grows its log without limit);
+    App Starter's own lines are appended the same way the apps' output is.
+  - A kept-running app can't use a return-code check (it would be ignored); older bundles files with missing
+    fields still load.
+- The app:
+  - Start-at-login no longer stops at the first failure (it skips it and starts the next bundle), and runs once per
+    **login** (the session id App Starter used doesn't exist on recent macOS, so it was once per restart).
+  - Stop-at-logout works when only the menu bar item is open, and a cancelled logout no longer makes a later
+    ordinary quit stop those bundles.
+  - The bundle editor's Save changes only what it shows (it could undo a login switch made in Settings meanwhile);
+    an app moved to a step of its own keeps its place in a custom stop order; the lights can no longer be set by
+    an older or cancelled round of checks; Full log from the progress sheet opens reliably; Refresh in the log
+    viewer no longer shares ⌘R with Start; Clear every log asks first; the Rename sub-bundle box shows the name.
+- Scripts: URL checks to plain `http://` on a Tailscale or LAN name were still blocked by macOS (one Info.plist key
+  cancelled the other) — fixed; replacing an open App Starter offers to close it and opens the new one; the new app
+  is copied beside the old one and swapped in; commands may use `osascript` (usage description added);
+  `--check` reports without the compiler; the test count adds up both test bundles.
+- 59 tests (48 engine, 11 app).
+
 ### Added
 - 2026-10-16: **The app** — Matt's picks from the mockups: layout **A · Sidebar + step list** and the
   **Power stack** icon.

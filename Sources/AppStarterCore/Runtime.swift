@@ -79,8 +79,10 @@ public final class Runtime: @unchecked Sendable {
         set { lock.lock(); autostartSession = newValue; lock.unlock(); save() }
     }
 
+    /// Written while holding the lock: two apps of a sub-bundle start at once, and an older copy written last would
+    /// lose the other's process number (found in review; reproduced with 16 parallel updates).
     private func save() {
-        lock.lock(); let f = File(apps: apps, autostartSession: autostartSession); lock.unlock()
-        try? JSON.encoder.encode(f).write(to: url, options: .atomic)
+        lock.lock(); defer { lock.unlock() }
+        try? JSON.encoder.encode(File(apps: apps, autostartSession: autostartSession)).write(to: url, options: .atomic)
     }
 }
