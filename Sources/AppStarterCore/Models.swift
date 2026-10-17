@@ -28,6 +28,19 @@ public struct AppBundle: Codable, Equatable, Identifiable, Sendable {
         return out
     }
 
+    /// The steps a run of the whole bundle goes through, in its order: each with only the apps that aren't paused, and
+    /// a step left with none (all paused, or empty) is passed over. `respectPause` false = every app (a one-app run).
+    public func runSteps(_ stopping: Bool, respectPause: Bool = true) -> [Step] {
+        (stopping ? stepsInStopOrder : steps).compactMap { s in
+            var s = s
+            if respectPause { s.apps = s.apps.filter { !$0.paused } }
+            return s.apps.isEmpty ? nil : s
+        }
+    }
+
+    /// The apps that take part in a run of the whole bundle (not paused), for its light.
+    public var activeApps: [AppItem] { apps.filter { !$0.paused } }
+
     /// The step that holds the app, and its position.
     public func stepIndex(of appId: UUID) -> Int? { steps.firstIndex { $0.apps.contains { $0.id == appId } } }
 
@@ -107,6 +120,9 @@ public struct AppItem: Codable, Equatable, Identifiable, Sendable {
     public var health: HealthCheck = .none
     /// how long to wait for it to come up (or go down), in seconds
     public var waitSeconds: Int = 60
+    /// paused: left out when its bundle starts or stops (and at login / logout) — left exactly as it is. Its own Start
+    /// and Stop still work. (Matt, Oct 17 2026: "exclude an application from stopping and starting with the group")
+    public var paused = false
 
     public init(id: UUID = UUID(), name: String, workingFolder: String = "", mode: RunMode = .startsItself, start: String = "", stop: String = "", env: [EnvVar] = [], health: HealthCheck = .none, waitSeconds: Int = 60) {
         self.id = id; self.name = name; self.workingFolder = workingFolder; self.mode = mode; self.start = start; self.stop = stop
@@ -195,7 +211,7 @@ extension EnvVar {
 }
 
 extension AppItem {
-    enum CodingKeys: String, CodingKey { case id, name, workingFolder, mode, start, stop, env, health, waitSeconds }
+    enum CodingKeys: String, CodingKey { case id, name, workingFolder, mode, start, stop, env, health, waitSeconds, paused }
     public init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
@@ -207,5 +223,6 @@ extension AppItem {
         env = try c.decodeIfPresent([EnvVar].self, forKey: .env) ?? []
         health = try c.decodeIfPresent(HealthCheck.self, forKey: .health) ?? .none
         waitSeconds = try c.decodeIfPresent(Int.self, forKey: .waitSeconds) ?? 60
+        paused = try c.decodeIfPresent(Bool.self, forKey: .paused) ?? false
     }
 }

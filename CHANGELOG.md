@@ -4,7 +4,20 @@ All notable changes to App Starter (Keep a Changelog style; dates are when the c
 
 ## [0.1.0] — unreleased
 
+### Added
+- 2026-10-17: **Pause an app** (Matt's pick, mockup A): a pause / play button on every app card. A paused app is left
+  out when its bundle starts or stops (Start, Start the rest, Stop, start at login, stop at logout) and is left
+  exactly as it is, running or not. Its card fades and gets a dashed amber edge, the label says *Paused*, and a
+  yellow ▶ resumes it. Paused apps don't count toward the bundle's light (green = every app that isn't paused is
+  up); a step whose only app is paused is passed over; the progress sheet lists what was left out. Also in the ⋯
+  menu, right-click, and as a **Paused** switch in the app's editor. Sub-bundles can't be paused.
+- 2026-10-17: **Start / Stop in the application editor**, at the top beside the app's live light (Matt: top, not
+  bottom). It runs right there — a spinner, then how it ended (or why it didn't) under the buttons — without a
+  second sheet. It works on paused apps too. Greyed until the app is added and while there are unsaved changes.
+
 ### Changed
+- 2026-10-17: Apps inside a sub-bundle show just *up* / *down* / *Paused* (no check kind), so names have room beside
+  the new button.
 - 2026-10-16: **A sub-bundle is dragged by its whole card** (not only its header), so moving a sub-bundle up or down
   the start/stop order is as easy as moving an app; an app inside it still drags on its own.
 - 2026-10-16: **Edit… in a card's ⋯ menu** (Matt's ask): on an app's card it opens the app's editor; on a

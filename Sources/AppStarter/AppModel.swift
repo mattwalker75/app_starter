@@ -207,12 +207,21 @@ final class AppModel: ObservableObject {
 
     func isUp(_ appId: UUID) -> Bool { up[appId] ?? false }
 
+    /// The bundle's light, from the apps that take part (paused ones don't count; Matt: green = all up).
     func status(_ b: AppBundle) -> BundleStatus {
-        // while it runs, the run's own view is the truth
-        BundleStatus.of(b.apps.map { isUp($0.id) })
+        if b.apps.isEmpty { return .empty }
+        let active = b.activeApps
+        return active.isEmpty ? .allPaused : BundleStatus.of(active.map { isUp($0.id) })
     }
 
-    func upCount(_ b: AppBundle) -> Int { b.apps.filter { isUp($0.id) }.count }
+    func upCount(_ b: AppBundle) -> Int { b.activeApps.filter { isUp($0.id) }.count }
+
+    /// Pause or resume one app (it keeps running, or stays down, as it is).
+    func setPaused(_ paused: Bool, app appId: UUID, in bundleId: UUID) {
+        guard var b = bundle(bundleId), let si = b.stepIndex(of: appId), let ai = b.steps[si].apps.firstIndex(where: { $0.id == appId }) else { return }
+        b.steps[si].apps[ai].paused = paused
+        updateBundle(b)
+    }
 
     var allApps: [AppItem] { bundles.flatMap(\.apps) }
 
@@ -266,13 +275,17 @@ final class AppModel: ObservableObject {
     }
 
     /// Starts or stops one application of a bundle on its own (from its row).
-    func runApp(_ app: AppItem, in b: AppBundle, _ phase: Phase) {
-        guard !isRunning(b.id) else { shownSession = sessions[b.id]; return }
+    /// Starts or stops one app on its own — even a paused one (pause only keeps it out of the bundle's runs).
+    /// `inPlace`: from the app's editor, which shows the progress itself — no progress sheet, and a failure is
+    /// reported there instead of asked about.
+    func runApp(_ app: AppItem, in b: AppBundle, _ phase: Phase, inPlace: Bool = false) {
+        guard !isRunning(b.id) else { if !inPlace { shownSession = sessions[b.id] }; return }
         let one = AppBundle(id: b.id, name: b.name, steps: [Step(app: app)])
-        launch(RunSession(bundle: one, phase: phase, singleApp: app.name), show: true) { engine, s in
-            phase == .starting
-                ? await engine.start(one, events: { e in Task { @MainActor in s.handle(e) } }, decide: { f in await s.ask(f) })
-                : await engine.stop(one, events: { e in Task { @MainActor in s.handle(e) } }, decide: { f in await s.ask(f) })
+        launch(RunSession(bundle: one, phase: phase, singleApp: app.name, respectPause: false), show: !inPlace) { engine, s in
+            let decide: @Sendable (Failure) async -> Choice = inPlace ? { _ in .skip } : { f in await s.ask(f) }
+            return phase == .starting
+                ? await engine.start(one, respectPause: false, events: { e in Task { @MainActor in s.handle(e) } }, decide: decide)
+                : await engine.stop(one, respectPause: false, events: { e in Task { @MainActor in s.handle(e) } }, decide: decide)
         }
     }
 

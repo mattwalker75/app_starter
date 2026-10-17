@@ -212,7 +212,7 @@ struct BundleDetail: View {
                 .disabled(bundle.apps.isEmpty).help("The logs of this bundle's applications")
             Button("Edit") { model.sheet = .editBundle(bundle) }
             let st = model.status(bundle)
-            if st != .allUp && st != .empty {
+            if st != .allUp && st != .empty && st != .allPaused {
                 Button { model.run(bundle, .starting) } label: { Label(st == .mixed ? "Start the rest" : "Start bundle", systemImage: "play.fill") }
                     .buttonStyle(.borderedProminent).disabled(model.isRunning(bundle.id))
             }
@@ -228,6 +228,8 @@ struct BundleDetail: View {
         let steps = bundle.steps.count, apps = bundle.apps.count
         var parts = ["\(steps) step\(steps == 1 ? "" : "s")", "\(apps) app\(apps == 1 ? "" : "s")"]
         if apps > 0 { parts.append("\(model.upCount(bundle)) up") }
+        let paused = bundle.apps.filter(\.paused).count
+        if paused > 0 { parts.append("\(paused) paused") }
         if bundle.startAtLogin { parts.append("starts at login") }
         if bundle.stopAtLogout { parts.append("stops at logout") }
         return parts.joined(separator: " · ")
@@ -285,6 +287,12 @@ struct StepRow: View {
             .contentShape(Rectangle())
             .modifier(GroupDrag(step: step))
             .overlay(RoundedRectangle(cornerRadius: DS.radius).strokeBorder(Theme.accent, lineWidth: targeted ? 2 : 0))
+            // a one-app step whose app is paused: the dashed amber edge on the whole card
+            .overlay {
+                if !step.isGroup, step.apps.first?.paused == true, !targeted {
+                    RoundedRectangle(cornerRadius: DS.radius).strokeBorder(Theme.attention.opacity(0.7), style: StrokeStyle(lineWidth: 1.2, dash: [6, 4]))
+                }
+            }
             // a sub-bundle takes apps dropped on it; a one-app step takes a drop as "put it here, before me"
             .dropDestination(for: String.self) { items, _ in
                 guard let token = items.first else { return false }
@@ -306,6 +314,7 @@ struct StepRow: View {
                 Button("Edit…") { model.sheet = .renameGroup(bundleId: bundle.id, step) }
             } else if let a = step.apps.first {
                 Button("Edit…") { model.sheet = .editApp(bundleId: bundle.id, a) }
+                Button(a.paused ? "Resume" : "Pause") { model.setPaused(!a.paused, app: a.id, in: bundle.id) }
             }
             Divider()
             Button("Move up") { model.moveStep(step.id, by: -1, in: bundle.id) }.disabled(number == 1)
@@ -339,13 +348,22 @@ struct AppRow: View {
         // a card that opens the editor on a click (a tap, not a Button: a button would take the mouse and a drag
         // could never start from it)
         HStack(spacing: 10) {
-            progressMark
+            progressMark.opacity(app.paused ? 0.45 : 1)
             Text(app.name).fontWeight(compact ? .medium : .semibold).lineLimit(1)
+                .foregroundStyle(app.paused ? .secondary : .primary)
             Spacer(minLength: 6)
-            Text(detail).font(DS.secondary).foregroundStyle(failed ? Theme.problem : .secondary).lineLimit(1)
+            Text(detail).font(DS.secondary).fontWeight(app.paused ? .semibold : .regular)
+                .foregroundStyle(failed ? Theme.problem : app.paused ? Theme.attention : .secondary).lineLimit(1)
+            PauseButton(app: app, bundleId: bundle.id)
         }
-        .padding(.horizontal, compact ? 10 : 0).padding(.vertical, compact ? 8 : 0)
+        .padding(.horizontal, compact ? 10 : 0).padding(.vertical, compact ? 6 : 0)
         .background(compact ? DS.panel(scheme) : .clear, in: RoundedRectangle(cornerRadius: DS.radiusSmall))
+        // a paused app in a sub-bundle: a dashed amber edge (a one-app step gets it on its whole card)
+        .overlay {
+            if compact && app.paused {
+                RoundedRectangle(cornerRadius: DS.radiusSmall).strokeBorder(Theme.attention.opacity(0.7), style: StrokeStyle(lineWidth: 1.2, dash: [5, 3]))
+            }
+        }
         .contentShape(Rectangle())
         .onTapGesture { model.sheet = .editApp(bundleId: bundle.id, app) }
         .accessibilityElement(children: .combine)
@@ -355,10 +373,11 @@ struct AppRow: View {
             if targeted { RoundedRectangle(cornerRadius: 1.5).fill(Theme.accent).frame(width: 3).offset(x: -6) }
         }
         .modifier(GroupAppDrag(bundleId: bundle.id, app: app, groupId: groupId, targeted: $targeted))
-        .help("Click to edit “\(app.name)” · drag to move it")
+        .help(app.paused ? "Paused: left out when the bundle starts or stops · click to edit" : "Click to edit “\(app.name)” · drag to move it")
         .contextMenu {
             Button("Start this one") { model.runApp(app, in: bundle, .starting) }
             Button("Stop this one") { model.runApp(app, in: bundle, .stopping) }
+            Button(app.paused ? "Resume" : "Pause") { model.setPaused(!app.paused, app: app.id, in: bundle.id) }
             Divider()
             Button("Show log") { model.sheet = .logs(bundleId: bundle.id, app: app.id) }
             Button("Edit…") { model.sheet = .editApp(bundleId: bundle.id, app) }
@@ -388,6 +407,9 @@ struct AppRow: View {
         case .failed(let f): return f
         default: break
         }
+        if app.paused { return compact ? "Paused" : "Paused · \(model.isUp(app.id) ? "up" : "down")" }
+        // inside a sub-bundle the row is narrow: just up or down (the name matters more than the check's kind)
+        if compact { return model.isUp(app.id) ? "up" : "down" }
         let how: String
         switch app.health {
         case .none: how = app.mode == .keepRunning ? "kept running" : "no check"
@@ -396,6 +418,28 @@ struct AppRow: View {
         case .url: how = "URL"
         }
         return "\(how) · \(model.isUp(app.id) ? "up" : "down")"
+    }
+}
+
+/// The pause / play button on every app card (Matt's pick, mockup A): a paused app is left out when its bundle
+/// starts or stops, and stays exactly as it is. Outlined ❚❚ to pause; a filled amber ▶ to resume.
+struct PauseButton: View {
+    @EnvironmentObject var model: AppModel
+    let app: AppItem
+    let bundleId: UUID
+    var body: some View {
+        Button { model.setPaused(!app.paused, app: app.id, in: bundleId) } label: {
+            Image(systemName: app.paused ? "play.fill" : "pause.fill")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(app.paused ? Color.black.opacity(0.8) : Color.secondary)
+                .frame(width: 24, height: 24)
+                .background(app.paused ? Theme.attention : Color.clear, in: Circle())
+                .overlay(Circle().strokeBorder(app.paused ? Color.clear : Color.secondary.opacity(0.45), lineWidth: 1))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help(app.paused ? "Resume — take part when the bundle starts or stops again" : "Pause — leave this app out when the bundle starts or stops (it stays as it is)")
+        .accessibilityLabel(app.paused ? "Resume \(app.name)" : "Pause \(app.name)")
     }
 }
 

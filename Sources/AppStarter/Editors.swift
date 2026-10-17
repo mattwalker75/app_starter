@@ -152,9 +152,14 @@ struct AppEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(isNew ? "New application" : "Edit “\(app.name)”").font(DS.heading)
-                Text("In bundle “\(bundle?.name ?? "")”").font(DS.secondary).foregroundStyle(.secondary)
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(isNew ? "New application" : "Edit “\(app.name)”").font(DS.heading)
+                    Text("In bundle “\(bundle?.name ?? "")”").font(DS.secondary).foregroundStyle(.secondary)
+                }
+                Spacer()
+                // start or stop this app now (Matt: at the top of the editor) — only what is saved can run
+                AppRunPill(bundleId: bundleId, appId: app.id, blockedBecause: isNew ? "Add it first to start or stop it" : (isDirty ? "Save first to start or stop it" : nil))
             }
             .padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 8)
             Form {
@@ -169,6 +174,8 @@ struct AppEditor: View {
                         }
                     }
                     Text("Its commands run here, as you, in your login shell (\(Shell.loginShell)) — like typing them in Terminal.").font(DS.secondary).foregroundStyle(.secondary)
+                    Toggle("Paused — leave this app out when its bundle starts or stops", isOn: $app.paused)
+                    Text("It stays exactly as it is (running or not). The Start / Stop at the top still work on it.").font(DS.secondary).foregroundStyle(.secondary)
                 }
                 Section("Environment variables · for start, stop and the check") {
                     ForEach($app.env) { $v in
@@ -285,6 +292,14 @@ struct AppEditor: View {
         return a
     }
 
+    /// Changes not saved yet (the run buttons work on what is saved, so they wait for Save).
+    private var isDirty: Bool {
+        guard !isNew, let saved = bundle?.app(app.id) else { return true }
+        if case .newGroup = placement { return true }
+        if placement != .stay { return true }
+        return built != saved
+    }
+
     private var canSave: Bool {
         if built.problem != nil { return false }
         if case .newGroup = placement, newGroupName.trimmingCharacters(in: .whitespaces).isEmpty { return false }
@@ -317,5 +332,84 @@ struct AppEditor: View {
             let home = NSHomeDirectory()
             app.workingFolder = u.path.hasPrefix(home + "/") ? "~" + u.path.dropFirst(home.count) : u.path
         }
+    }
+}
+
+/// Start / Stop for one app, at the top of its editor: its live light, and the two buttons. It runs in place — the
+/// pill shows the progress and how it ended — rather than opening the progress sheet over the editor. Paused apps
+/// can be started and stopped here too. `blockedBecause` (new, or unsaved changes) greys the buttons and says why.
+struct AppRunPill: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.colorScheme) private var scheme
+    let bundleId: UUID
+    let appId: UUID
+    let blockedBecause: String?
+
+    private var bundle: AppBundle? { model.bundle(bundleId) }
+    private var app: AppItem? { bundle?.app(appId) }
+    /// this app's own run (from here or "Start this one"), going on or just finished
+    private var mine: RunSession? {
+        guard let s = model.sessions[bundleId], s.singleApp != nil, s.bundle.apps.first?.id == appId else { return nil }
+        return s
+    }
+    private var bundleBusy: Bool { model.isRunning(bundleId) && mine == nil }
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 4) {
+            HStack(spacing: 8) {
+                status
+                Button { go(.starting) } label: { Label("Start", systemImage: "play.fill") }
+                    .buttonStyle(.bordered).controlSize(.small)
+                    .disabled(disabled || up)
+                Button { go(.stopping) } label: { Label("Stop", systemImage: "stop.fill") }
+                    .buttonStyle(.borderedProminent).tint(Theme.problem).controlSize(.small)
+                    .disabled(disabled || !up)
+            }
+            .padding(.leading, 10).padding(.trailing, 5).padding(.vertical, 4)
+            .background(DS.surface(scheme), in: Capsule())
+            .overlay(Capsule().strokeBorder(DS.edge(scheme)))
+            if let why = note { Text(why.text).font(DS.secondary).foregroundStyle(why.color).lineLimit(2).frame(maxWidth: 360, alignment: .trailing) }
+        }
+        .onDisappear { if let s = mine, !s.isRunning { model.dismiss(s) } }
+    }
+
+    private var up: Bool { model.isUp(appId) }
+    private var running: Bool { mine?.isRunning ?? false }
+    private var disabled: Bool { blockedBecause != nil || bundleBusy || running || app == nil }
+
+    @ViewBuilder private var status: some View {
+        if running, let s = mine {
+            ProgressView().controlSize(.small).frame(width: 12)
+            Text(s.phase == .starting ? "Starting…" : "Stopping…").font(DS.secondary)
+        } else {
+            Dot(color: up ? Theme.good : Theme.problem)
+            Text(up ? "Up" : "Down").font(DS.secondary).fontWeight(.medium)
+            if app?.paused == true { Text("· paused").font(DS.secondary).foregroundStyle(Theme.attention) }
+        }
+    }
+
+    /// What to say under the pill: why it is greyed, or how the last run here ended.
+    private var note: (text: String, color: Color)? {
+        if let b = blockedBecause { return (b, .secondary) }
+        if bundleBusy { return ("The bundle is starting or stopping — wait for it to finish", .secondary) }
+        guard let s = mine, let p = s.progress[appId] else { return nil }
+        let verb = s.phase == .starting ? "start" : "stop"
+        switch p {
+        case .working(let w): return (w, .secondary)
+        case .done(let n): return (n.prefix(1).uppercased() + n.dropFirst(), Theme.good)
+        case .failed(let f): return ("Didn't \(verb): \(f)", Theme.problem)
+        default:
+            // a failure that was skipped (nobody is asked here) ends as "skipped"
+            if !s.isRunning, s.outcome != .done {
+                return ("Didn't \(verb): \(s.failures[appId] ?? "see its log (right-click the app → Show log)")", Theme.problem)
+            }
+            return nil
+        }
+    }
+
+    private func go(_ phase: Phase) {
+        guard let a = app, let b = bundle else { return }
+        if let s = mine, !s.isRunning { model.dismiss(s) }
+        model.runApp(a, in: b, phase, inPlace: true)
     }
 }

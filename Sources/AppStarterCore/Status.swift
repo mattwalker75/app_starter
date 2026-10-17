@@ -3,7 +3,7 @@
 import Foundation
 
 public enum BundleStatus: String, Equatable, Sendable {
-    case allUp, allDown, mixed, empty
+    case allUp, allDown, mixed, empty, allPaused
 
     public static func of(_ up: [Bool]) -> BundleStatus {
         if up.isEmpty { return .empty }
@@ -13,6 +13,6 @@ public enum BundleStatus: String, Equatable, Sendable {
     }
 
     public var label: String {
-        switch self { case .allUp: return "All up"; case .allDown: return "All down"; case .mixed: return "Some up, some down"; case .empty: return "No apps yet" }
+        switch self { case .allUp: return "All up"; case .allDown: return "All down"; case .mixed: return "Some up, some down"; case .empty: return "No apps yet"; case .allPaused: return "All paused" }
     }
 }

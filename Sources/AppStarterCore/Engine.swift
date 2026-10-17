@@ -14,6 +14,8 @@ public enum AppProgress: Equatable, Sendable {
     case done(String)
     case failed(String)
     case skipped
+    /// paused: left out of this run, left as it is
+    case paused
 }
 
 public struct FailedApp: Equatable, Sendable {
@@ -91,10 +93,12 @@ public final class Engine: @unchecked Sendable {
 
     // MARK: a whole bundle
 
-    public func start(_ bundle: AppBundle, events: @escaping @Sendable (RunEvent) -> Void, decide: @escaping @Sendable (Failure) async -> Choice) async -> Outcome {
+    /// `respectPause` false = paused apps too (starting or stopping one app on its own).
+    public func start(_ bundle: AppBundle, respectPause: Bool = true, events: @escaping @Sendable (RunEvent) -> Void, decide: @escaping @Sendable (Failure) async -> Choice) async -> Outcome {
         var started: [AppItem] = []   // what this run started, for "Stop what started"
         var skipped: [String] = []
-        let steps = bundle.steps.filter { !$0.apps.isEmpty }
+        if respectPause { for a in bundle.apps where a.paused { events(.app(a.id, .paused)) } }
+        let steps = bundle.runSteps(false, respectPause: respectPause)
         for (i, step) in steps.enumerated() {
             if Task.isCancelled { return .cancelled }
             events(.step(i, of: steps.count, stepId: step.id))
@@ -128,9 +132,10 @@ public final class Engine: @unchecked Sendable {
         return skipped.isEmpty ? .done : .doneWithSkips(skipped)
     }
 
-    public func stop(_ bundle: AppBundle, events: @escaping @Sendable (RunEvent) -> Void, decide: @escaping @Sendable (Failure) async -> Choice) async -> Outcome {
+    public func stop(_ bundle: AppBundle, respectPause: Bool = true, events: @escaping @Sendable (RunEvent) -> Void, decide: @escaping @Sendable (Failure) async -> Choice) async -> Outcome {
         var skipped: [String] = []
-        let steps = bundle.stepsInStopOrder.filter { !$0.apps.isEmpty }
+        if respectPause { for a in bundle.apps where a.paused { events(.app(a.id, .paused)) } }
+        let steps = bundle.runSteps(true, respectPause: respectPause)
         for (i, step) in steps.enumerated() {
             if Task.isCancelled { return .cancelled }
             events(.step(i, of: steps.count, stepId: step.id))

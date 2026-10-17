@@ -15,6 +15,10 @@ each app to be really up before starting the ones that need it.
 - **Drag a card to rearrange** (hold it, then drag): a step moves up or down the order — a whole sub-bundle by
   grabbing its card anywhere but on one of its apps; an app goes into a sub-bundle (drop it on the sub-bundle, or on an app in it to land just before that
   one), out of one (drop it between steps), or from one to another. A blue line shows where it will land.
+- **Pause** an app with the ❚❚ button on its card: it is left out when its bundle starts or stops (and at login /
+  logout) and stays exactly as it is. A paused card fades, has a dashed amber edge and a yellow ▶ to resume it.
+  Paused apps don't count toward the bundle's light. (Also in the ⋯ menu, right-click, and the editor's **Paused**
+  switch.) Sub-bundles can't be paused — pause their apps.
 - **Logs** at the top of a bundle's page shows its apps' logs: pick an app on the left; the log follows along
   while it is open (Follow along), with Show in Finder and Clear.
 - The **⋯** menu on a step: **Edit…** (the app, or a sub-bundle's name), Move up / Move down, Delete, and for a sub-bundle Start or Stop just that sub-bundle.
@@ -23,6 +27,8 @@ each app to be really up before starting the ones that need it.
 
 ## An application
 Click an app to edit it.
+- **Start / Stop** at the top of the editor, beside the app's light, start or stop just this app now — even when
+  it is paused. The result shows under the buttons. They wait until the app is added and its changes saved.
 - **Name** and **Where it goes**: its own step at the end, a sub-bundle, or a new sub-bundle.
 - **Working folder** (optional): the commands run there, as you, in your login shell — just as if you typed
   them in Terminal (your PATH and Homebrew work; `~/.zshrc` is read too, quietly).

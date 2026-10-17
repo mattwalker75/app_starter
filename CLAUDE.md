@@ -60,6 +60,11 @@ a developer: every message is a plain sentence.
     `Arrange.swift` (tested in ArrangeTests); the window only reports drops (`AppModel.drop`, refused while the bundle
     runs). A sub-bundle drags by its whole card (`GroupDrag`), its app rows by themselves. App cards are NOT Buttons (a Button swallows the mouse, so a drag never starts) — `onTapGesture` opens the
     editor. Logs are read per bundle (`BundleLogs`, the Logs button), not from Settings.
+11c. **Pause** (Matt, Oct 17 2026, mockup "Pause A"): `AppItem.paused` — a ❚❚/▶ button on every app card; paused apps
+    are left out of every bundle-wide run (`AppBundle.runSteps`, `Engine.start/stop(respectPause:)`), at login and logout,
+    and out of the light (`activeApps`, `BundleStatus.allPaused`). A one-app run (editor Start/Stop, "Start this one")
+    passes `respectPause: false`. Sub-bundles can't be paused. The editor's Start/Stop pill (top, beside the light) runs
+    in place (`runApp(…, inPlace: true)`: no progress sheet, failures skipped and shown in the pill) and waits for Save.
 12. **Confirm before stopping a bundle** (names its apps); confirm buttons have no destructive role, Cancel is default
     (data_syncer rule 14a).
 13. **Scripts:** BUILD_APP.sh / INSTALL_APP.sh like data_syncer's; idempotent, plain-spoken. **Commits:** one per feature

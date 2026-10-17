@@ -83,7 +83,7 @@ enum Theme {
 
     /// A bundle's light: green all up, red all down, yellow (attention) some of each.
     static func light(_ s: BundleStatus) -> Color {
-        switch s { case .allUp: return good; case .allDown: return problem; case .mixed: return attention; case .empty: return .secondary }
+        switch s { case .allUp: return good; case .allDown: return problem; case .mixed: return attention; case .empty, .allPaused: return .secondary }
     }
 
     /// Applies the settings: the chosen theme, or just the accent.

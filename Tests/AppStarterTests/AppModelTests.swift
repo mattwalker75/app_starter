@@ -247,3 +247,46 @@ final class AppModelDragTests: XCTestCase {
         m.sessions[id]?.cancel()
     }
 }
+
+@MainActor
+final class AppModelPauseTests: XCTestCase {
+    private var home: URL!
+    override func setUp() async throws {
+        home = FileManager.default.temporaryDirectory.appendingPathComponent("appstarter-pause-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        setenv("APPSTARTER_HOME", home.path, 1)
+    }
+    override func tearDown() async throws { unsetenv("APPSTARTER_HOME"); try? FileManager.default.removeItem(at: home) }
+
+    func testPausedAppsDontCountTowardTheLightAndRunOnTheirOwnInPlace() async throws {
+        let m = AppModel()
+        m.addBundle("B")
+        let id = try XCTUnwrap(m.selectedId)
+        var a = AppItem(name: "A", workingFolder: home.path, start: "touch a.up", stop: "rm -f a.up")
+        a.health = .output(command: "test -f a.up && echo UP", contains: "UP", ignoreCase: false)
+        var p = AppItem(name: "P", workingFolder: home.path, start: "touch p.up", stop: "rm -f p.up")
+        p.health = .output(command: "test -f p.up && echo UP", contains: "UP", ignoreCase: false)
+        m.saveApp(a, in: id, placement: .newStep)
+        m.saveApp(p, in: id, placement: .newStep)
+        m.setPaused(true, app: p.id, in: id)
+        XCTAssertEqual(m.bundle(id)?.app(p.id)?.paused, true)
+
+        m.run(try XCTUnwrap(m.bundle(id)), .starting, show: false)
+        let until = Date().addingTimeInterval(10)
+        while (m.sessions[id]?.isRunning ?? true) && Date() < until { try await Task.sleep(nanoseconds: 100_000_000) }
+        await m.refreshStatus()
+        XCTAssertEqual(m.status(try XCTUnwrap(m.bundle(id))), .allUp, "green: every app that isn't paused is up")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: home.appendingPathComponent("p.up").path))
+
+        // from its editor: runs even though it is paused, and opens no progress sheet
+        if let s = m.sessions[id] { m.dismiss(s) }
+        m.runApp(try XCTUnwrap(m.bundle(id)?.app(p.id)), in: try XCTUnwrap(m.bundle(id)), .starting, inPlace: true)
+        XCTAssertNil(m.shownSession)
+        let until2 = Date().addingTimeInterval(10)
+        while (m.sessions[id]?.isRunning ?? true) && Date() < until2 { try await Task.sleep(nanoseconds: 100_000_000) }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: home.appendingPathComponent("p.up").path))
+
+        m.setPaused(true, app: a.id, in: id)
+        XCTAssertEqual(m.status(try XCTUnwrap(m.bundle(id))), .allPaused)
+    }
+}

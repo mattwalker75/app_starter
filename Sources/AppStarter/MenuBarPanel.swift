@@ -15,7 +15,7 @@ struct MenuBarPanel: View {
             HStack {
                 Text("App Starter").fontWeight(.bold)
                 Spacer()
-                let all = model.allApps
+                let all = model.bundles.flatMap(\.activeApps)
                 Text("\(all.filter { model.isUp($0.id) }.count) of \(all.count) apps up").font(DS.secondary).foregroundStyle(.secondary)
             }
             HStack(spacing: 12) {
@@ -56,7 +56,7 @@ struct MenuBarPanel: View {
                 Button("Show") { openApp(); model.shownSession = s }.controlSize(.small)
             } else if st == .allUp {
                 Button("Stop") { openApp(); model.askToStop = b }.controlSize(.small)
-            } else if st != .empty {
+            } else if st != .empty && st != .allPaused {
                 Button(st == .mixed ? "Start the rest" : "Start") { model.run(b, .starting, show: false) }.controlSize(.small).buttonStyle(.borderedProminent)
                 if st == .mixed { Button("Stop") { openApp(); model.askToStop = b }.controlSize(.small) }
             }

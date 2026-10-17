@@ -22,6 +22,15 @@ struct RunSheet: View {
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
+                    // paused apps are not part of this run: say so once, above the steps
+                    let paused = session.bundle.apps.filter { session.progress[$0.id] == .paused }
+                    if !paused.isEmpty {
+                        HStack(spacing: 8) {
+                            Image(systemName: "pause.circle.fill").foregroundStyle(Theme.attention)
+                            Text("Paused, left as \(paused.count == 1 ? "it is" : "they are"): \(paused.map(\.name).joined(separator: ", "))")
+                                .font(DS.secondary).foregroundStyle(.secondary)
+                        }
+                    }
                     ForEach(Array(session.steps.enumerated()), id: \.element.id) { i, step in stepCard(i, step) }
                     if session.failure != nil {
                         Text("Paused: the next step waits until every app in this one is \(session.phase == .starting ? "up" : "down"), or you skip the one that failed.")
@@ -129,6 +138,7 @@ struct RunSheet: View {
             case .done(let n): return (Theme.good, n)
             case .failed(let f): return (Theme.problem, f)
             case .skipped: return (Theme.attention, "skipped")
+            case .paused: return (.secondary, "paused — left as it is")
             }
         }()
         return HStack(alignment: .firstTextBaseline, spacing: 8) {

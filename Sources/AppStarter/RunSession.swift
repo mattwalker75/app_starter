@@ -15,16 +15,20 @@ final class RunSession: ObservableObject, Identifiable {
     let startedAt = Date()
     @Published var stepIndex = 0
     @Published var progress: [UUID: AppProgress] = [:]
+    /// why each app last failed in this run (kept after a skip replaces its progress)
+    @Published var failures: [UUID: String] = [:]
     @Published var failure: Failure?
     @Published var outcome: Outcome?
     @Published var finishedAt: Date?
     private var answer: CheckedContinuation<Choice, Never>?
     var task: Task<Void, Never>?
 
-    init(bundle: AppBundle, phase: Phase, singleApp: String? = nil) {
+    /// `respectPause` false: a run of one app on its own, which goes ahead even when the app is paused.
+    init(bundle: AppBundle, phase: Phase, singleApp: String? = nil, respectPause: Bool = true) {
         self.bundle = bundle; self.phase = phase; self.singleApp = singleApp
-        steps = (phase == .starting ? bundle.steps : bundle.stepsInStopOrder).filter { !$0.apps.isEmpty }
-        for a in bundle.apps { progress[a.id] = .waiting }
+        // the same steps the engine goes through (paused apps left out, all-paused steps passed over)
+        steps = bundle.runSteps(phase == .stopping, respectPause: respectPause)
+        for a in bundle.apps { progress[a.id] = respectPause && a.paused ? .paused : .waiting }
     }
 
     var isRunning: Bool { outcome == nil }
@@ -45,7 +49,9 @@ final class RunSession: ObservableObject, Identifiable {
     func handle(_ e: RunEvent) {
         switch e {
         case .step(let i, _, _): stepIndex = i
-        case .app(let id, let p): progress[id] = p
+        case .app(let id, let p):
+            progress[id] = p
+            if case .failed(let why) = p { failures[id] = why }
         case .paused, .resumed: break   // the question itself arrives through ask()
         }
     }
