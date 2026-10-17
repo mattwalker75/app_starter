@@ -12,7 +12,12 @@ each app to be really up before starting the ones that need it.
   Add apps to it with **Add to this sub-bundle**, or choose it under *Where it goes* in the app's editor.
 - The next step begins only when **every** app in the step before is up.
 - **Stopping** goes from the bottom up, unless you set your own stop order (Edit → Stop order).
-- The **⋯** menu on a step moves it up or down, renames or deletes a sub-bundle, or starts/stops just that sub-bundle.
+- **Drag a card to rearrange** (hold it, then drag): a step moves up or down the order — a sub-bundle by its
+  header; an app goes into a sub-bundle (drop it on the sub-bundle, or on an app in it to land just before that
+  one), out of one (drop it between steps), or from one to another. A blue line shows where it will land.
+- **Logs** at the top of a bundle's page shows its apps' logs: pick an app on the left; the log follows along
+  while it is open (Follow along), with Show in Finder and Clear.
+- The **⋯** menu on a step also moves it up or down, renames or deletes a sub-bundle, or starts/stops just that sub-bundle.
 - Right-click an app: **Start this one**, **Stop this one**, **Show log**, Edit, Delete.
 - Deleting a step, an app or a bundle only makes App Starter forget it — nothing is stopped.
 

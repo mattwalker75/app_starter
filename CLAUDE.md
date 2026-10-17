@@ -56,6 +56,10 @@ a developer: every message is a plain sentence.
     any load trouble the model skips pruning logs/state and skips autostart. Import → Replace keeps local secret values.
     state.json is written under its lock (parallel starts). Info.plist has `NSAllowsArbitraryLoads` ONLY (with
     `NSAllowsLocalNetworking` beside it macOS ignores it — reproduced).
+11b. **Arranging is drag and drop** (Matt, Oct 16 2026): the rules are ONE pure function, `AppBundle.moving(_:to:)` in
+    `Arrange.swift` (tested in ArrangeTests); the window only reports drops (`AppModel.drop`, refused while the bundle
+    runs). App cards are NOT Buttons (a Button swallows the mouse, so a drag never starts) — `onTapGesture` opens the
+    editor. Logs are read per bundle (`BundleLogs`, the Logs button), not from Settings.
 12. **Confirm before stopping a bundle** (names its apps); confirm buttons have no destructive role, Cancel is default
     (data_syncer rule 14a).
 13. **Scripts:** BUILD_APP.sh / INSTALL_APP.sh like data_syncer's; idempotent, plain-spoken. **Commits:** one per feature

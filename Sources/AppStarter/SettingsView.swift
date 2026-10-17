@@ -79,7 +79,7 @@ struct SettingsView: View {
             Picker("Trim each app's log once it passes", selection: $model.settings.logLimitMB) {
                 Text("1 MB").tag(1); Text("2 MB").tag(2); Text("5 MB").tag(5); Text("20 MB").tag(20)
             }
-            Text("Each app's log holds App Starter's own lines (when, which command, how it ended) and what the commands print. Open one from an app's row: right-click → Show log.")
+            Text("Each app's log holds App Starter's own lines (when, which command, how it ended) and what the commands print. To read them, use the Logs button on a bundle's page (or right-click an app → Show log).")
                 .font(DS.secondary).foregroundStyle(.secondary)
             HStack {
                 Button("Show the logs folder") { NSWorkspace.shared.open(model.engine.logs.folder) }

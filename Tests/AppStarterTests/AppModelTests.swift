@@ -215,3 +215,35 @@ final class AppModelReviewTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: someLog.path), "the logs of apps that only seem gone are kept")
     }
 }
+
+@MainActor
+final class AppModelDragTests: XCTestCase {
+    private var home: URL!
+    override func setUp() async throws {
+        home = FileManager.default.temporaryDirectory.appendingPathComponent("appstarter-drag-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        setenv("APPSTARTER_HOME", home.path, 1)
+    }
+    override func tearDown() async throws { unsetenv("APPSTARTER_HOME"); try? FileManager.default.removeItem(at: home) }
+
+    func testADropRearrangesAndSavesButNotWhileTheBundleIsBusy() async throws {
+        let m = AppModel()
+        m.addBundle("B")
+        let id = try XCTUnwrap(m.selectedId)
+        let a = AppItem(name: "A", workingFolder: home.path, start: "true", stop: "true")
+        let slow = AppItem(name: "Slow", workingFolder: home.path, start: "sleep 3", stop: "true")
+        m.saveApp(a, in: id, placement: .newStep)
+        m.saveApp(slow, in: id, placement: .newGroup("G"))
+        let gid = try XCTUnwrap(m.bundle(id)?.steps.last?.id)
+
+        XCTAssertTrue(m.drop(DragItem.app(a.id).token, at: .intoGroup(gid, before: slow.id), in: id))
+        XCTAssertEqual(m.bundle(id)?.steps.map(\.apps.count), [2])
+        XCTAssertEqual(AppModel().bundles.first?.steps.first?.apps.map(\.name), ["A", "Slow"], "saved")
+        XCTAssertFalse(m.drop("not a drag", at: .gap(0), in: id))
+
+        m.run(try XCTUnwrap(m.bundle(id)), .starting, show: false)
+        XCTAssertFalse(m.drop(DragItem.app(a.id).token, at: .gap(0), in: id), "no rearranging while it starts")
+        XCTAssertNotNil(m.notice)
+        m.sessions[id]?.cancel()
+    }
+}

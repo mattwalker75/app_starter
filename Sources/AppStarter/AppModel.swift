@@ -26,7 +26,8 @@ enum MainSheet: Identifiable {
     case editApp(bundleId: UUID, AppItem)
     case newGroup(bundleId: UUID)
     case renameGroup(bundleId: UUID, Step)
-    case log(AppItem)
+    /// the logs of one bundle's apps; `app` is the one shown first
+    case logs(bundleId: UUID, app: UUID?)
     var id: String {
         switch self {
         case .newBundle: return "newBundle"
@@ -35,7 +36,7 @@ enum MainSheet: Identifiable {
         case .editApp(_, let a): return "editApp-\(a.id)"
         case .newGroup(let b): return "newGroup-\(b)"
         case .renameGroup(_, let s): return "renameGroup-\(s.id)"
-        case .log(let a): return "log-\(a.id)"
+        case .logs(let b, _): return "logs-\(b)"
         }
     }
 }
@@ -179,6 +180,19 @@ final class AppModel: ObservableObject {
         b.steps.removeAll { $0.id == stepId }
         b.stopOrder?.removeAll { $0 == stepId }
         updateBundle(b)
+    }
+
+    /// A drag and drop in the bundle's page (`token` is what the drag carried). False = nothing changed.
+    @discardableResult
+    func drop(_ token: String, at target: DropTarget, in bundleId: UUID) -> Bool {
+        guard let item = DragItem(token: token), let b = bundle(bundleId) else { return false }
+        guard !isRunning(bundleId) else {
+            notice = Notice(title: "“\(b.name)” is busy", message: "Wait for it to finish starting or stopping before changing its order.")
+            return false
+        }
+        guard let moved = b.moving(item, to: target) else { return false }
+        updateBundle(moved)
+        return true
     }
 
     func moveStep(_ stepId: UUID, by delta: Int, in bundleId: UUID) {

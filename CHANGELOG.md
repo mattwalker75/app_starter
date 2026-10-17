@@ -5,6 +5,14 @@ All notable changes to App Starter (Keep a Changelog style; dates are when the c
 ## [0.1.0] — unreleased
 
 ### Changed
+- 2026-10-16: **Drag and drop to arrange a bundle** (Matt's idea): hold a card and drag it. A step (one app, or
+  a whole sub-bundle by its header) moves up or down the order; an app can be dragged into a sub-bundle, out of
+  one (it becomes a step of its own where it is dropped), from one sub-bundle to another, or within one. A line
+  shows where it will land; a sub-bundle lights up when an app can be dropped in it. Not while the bundle is
+  starting or stopping. (The ⋯ menu still has Move up / Move down.)
+- 2026-10-16: **Logs button on each bundle's page**: the bundle's apps down the left, by step, with each log's
+  size; the chosen app's log on the right, following along every two seconds; Show in Finder, Clear. (Right-click
+  an app → Show log, and Full log on a failed step, open the same view on that app.)
 - 2026-10-16: **INSTALL_APP.sh moves the app** out of build/ into /Applications by default (Matt's choice);
   `-p` / `--copy` copies it instead, leaving build/App Starter.app in place (the old behaviour).
 - 2026-10-16: **Application editor order** (Matt's tweak): name / where it goes / working folder, then

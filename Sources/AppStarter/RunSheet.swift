@@ -90,7 +90,7 @@ struct RunSheet: View {
                         Button(f.apps.count == 1 ? "Skip it and go on" : "Skip them and go on") { session.choose(.skip) }
                         Button(session.phase == .starting ? "Stop what started" : "End here") { session.choose(.giveUp) }
                             .foregroundStyle(Theme.problem)
-                        if let a = session.bundle.app(f.apps[0].id) { Button("Full log") { model.shownSession = nil; DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { model.sheet = .log(a) } }.buttonStyle(.link).foregroundStyle(Theme.accent) }
+                        if let a = session.bundle.app(f.apps[0].id) { Button("Full log") { model.shownSession = nil; DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { model.sheet = .logs(bundleId: session.bundle.id, app: a.id) } }.buttonStyle(.link).foregroundStyle(Theme.accent) }
                     }
                     .padding(.leading, 28)
                 }
@@ -139,47 +139,106 @@ struct RunSheet: View {
     }
 }
 
-/// An application's log (the newest part), with Refresh, Clear and Show in Finder.
-struct LogViewer: View {
+/// A bundle's logs (Matt: "a Logs button in the bundle itself"): its applications down the left, in start order
+/// and by step; the chosen one's log on the right — the newest part, following along while it is open — with
+/// Show in Finder and Clear.
+struct BundleLogs: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
-    let app: AppItem
+    let bundleId: UUID
+    /// the app shown first (nil = the bundle's first app)
+    let initial: UUID?
+    @State private var selected: UUID?
     @State private var text = ""
+    @State private var follow = true
     @State private var confirmClear = false
 
+    private var bundle: AppBundle? { model.bundle(bundleId) }
+    private var app: AppItem? { bundle?.apps.first { $0.id == selected } }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(spacing: 0) {
             HStack {
-                Text("Log — \(app.name)").font(DS.heading)
+                Text("Logs — \(bundle?.name ?? "")").font(DS.heading)
                 Spacer()
-                Button("Refresh") { load() }
-            }
-            ScrollViewReader { proxy in
-                ScrollView {
-                    Text(text.isEmpty ? "Nothing yet — the log fills in when App Starter starts or stops this app." : text)
-                        .font(DS.mono).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(10)
-                    Color.clear.frame(height: 1).id("end")
-                }
-                .background(DS.panel(.light), in: RoundedRectangle(cornerRadius: DS.radiusSmall))
-                .onAppear { proxy.scrollTo("end") }
-                .onChange(of: text) { _, _ in proxy.scrollTo("end") }
-            }
-            HStack {
-                Text("The newest part is shown; a log is trimmed once it passes \(model.settings.logLimitMB) MB. Secret values are hidden in App Starter's own lines; what the app prints itself appears as it is.")
-                    .font(DS.secondary).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                Spacer()
-                Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([model.engine.logs.url(app.id)]) }
-                Button("Clear…") { confirmClear = true }
+                Toggle("Follow along", isOn: $follow).toggleStyle(.checkbox).help("Refresh every two seconds while this is open")
                 Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
             }
+            .padding(.horizontal, 20).padding(.vertical, 14)
+            Divider()
+            HStack(spacing: 0) {
+                List(selection: $selected) {
+                    if let b = bundle {
+                        ForEach(Array(b.steps.enumerated()), id: \.element.id) { i, step in
+                            Section("\(i + 1) · \(step.title.isEmpty ? "Sub-bundle" : step.title)") {
+                                ForEach(step.apps) { a in
+                                    HStack(spacing: 8) {
+                                        Dot(color: model.isUp(a.id) ? Theme.good : Theme.problem)
+                                        Text(a.name).lineLimit(1)
+                                        Spacer()
+                                        Text(size(a.id)).font(DS.secondary).foregroundStyle(.secondary)
+                                    }
+                                    .tag(a.id)
+                                }
+                            }
+                        }
+                    }
+                }
+                .listStyle(.sidebar)
+                .frame(width: 250)
+                Divider()
+                VStack(alignment: .leading, spacing: 10) {
+                    if let a = app {
+                        HStack {
+                            Text(a.name).font(DS.section)
+                            Spacer()
+                            Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([model.engine.logs.url(a.id)]) }
+                            Button("Clear…") { confirmClear = true }
+                        }
+                        ScrollViewReader { proxy in
+                            ScrollView {
+                                Text(text.isEmpty ? "Nothing yet — the log fills in when App Starter starts or stops this app." : text)
+                                    .font(DS.mono).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(10)
+                                Color.clear.frame(height: 1).id("end")
+                            }
+                            .background(DS.panel(.light), in: RoundedRectangle(cornerRadius: DS.radiusSmall))
+                            .onAppear { proxy.scrollTo("end") }
+                            .onChange(of: text) { _, _ in if follow { proxy.scrollTo("end") } }
+                        }
+                        Text("The newest part is shown; a log is trimmed once it passes \(model.settings.logLimitMB) MB (Settings → Logs). Secret values are hidden in App Starter's own lines; what the app prints itself appears as it is.")
+                            .font(DS.secondary).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        Text("Choose an application on the left.").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                }
+                .padding(16)
+            }
         }
-        .padding(20).frame(width: 820, height: 600)
-        .onAppear(perform: load)
-        .confirmationDialog("Clear the log of “\(app.name)”?", isPresented: $confirmClear, titleVisibility: .visible) {
-            Button("Clear log") { model.engine.logs.clear(app.id); load() }
+        .frame(width: 980, height: 640)
+        // chosen once the list is on screen: a List picks its own row while it first lays out
+        .onAppear { DispatchQueue.main.async { selected = initial ?? bundle?.apps.first?.id } }
+        // load now, and again every two seconds while following
+        .task(id: selected) {
+            load()
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                if follow { load() }
+            }
+        }
+        .confirmationDialog("Clear the log of “\(app?.name ?? "")”?", isPresented: $confirmClear, titleVisibility: .visible) {
+            Button("Clear log") { if let a = app { model.engine.logs.clear(a.id); load() } }
             Button("Cancel", role: .cancel) {}.keyboardShortcut(.defaultAction)
         }
     }
 
-    private func load() { text = model.engine.logs.tail(app.id) }
+    private func load() {
+        guard let id = selected else { text = ""; return }
+        let t = model.engine.logs.tail(id)
+        if t != text { text = t }
+    }
+
+    private func size(_ id: UUID) -> String {
+        let bytes = (try? FileManager.default.attributesOfItem(atPath: model.engine.logs.url(id).path))?[.size] as? Int ?? 0
+        return bytes == 0 ? "empty" : ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
+    }
 }
