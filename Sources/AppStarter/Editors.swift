@@ -170,25 +170,6 @@ struct AppEditor: View {
                     }
                     Text("Its commands run here, as you, in your login shell (\(Shell.loginShell)) — like typing them in Terminal.").font(DS.secondary).foregroundStyle(.secondary)
                 }
-                Section("Start") {
-                    Picker("How it runs", selection: $app.mode) {
-                        Text("Starts itself in the background").tag(RunMode.startsItself)
-                        Text("App Starter keeps it running").tag(RunMode.keepRunning)
-                    }
-                    .pickerStyle(.segmented)
-                    Text(app.mode == .startsItself
-                         ? "The command sets the app going and finishes — like ./TRACKER.sh --start, open -a Docker or docker start …"
-                         : "The command is the app itself and keeps running — like npm start or ollama serve. App Starter keeps it going, sends its output to the log, and stops it.")
-                        .font(DS.secondary).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    ScriptEditor(text: $app.start, placeholder: "./TRACKER.sh --start", label: "Start command")
-                    Text("Several lines are fine: they run one after another.").font(DS.secondary).foregroundStyle(.secondary)
-                }
-                Section("Stop") {
-                    ScriptEditor(text: $app.stop, placeholder: app.mode == .keepRunning ? "optional — empty: App Starter stops what it started" : "./TRACKER.sh --stop", label: "Stop command")
-                    if app.mode == .keepRunning {
-                        Text("Empty: App Starter asks the app to quit, and forces it after 10 seconds.").font(DS.secondary).foregroundStyle(.secondary)
-                    }
-                }
                 Section("Environment variables · for start, stop and the check") {
                     ForEach($app.env) { $v in
                         HStack(spacing: 8) {
@@ -207,6 +188,25 @@ struct AppEditor: View {
                         Button { app.env.append(EnvVar(name: "", value: "")) } label: { Label("Add variable", systemImage: "plus") }
                         Spacer()
                         Text("Secret values are kept encrypted on disk and hidden in the log.").font(DS.secondary).foregroundStyle(.secondary)
+                    }
+                }
+                Section("Start") {
+                    Picker("How it runs", selection: $app.mode) {
+                        Text("Starts itself in the background").tag(RunMode.startsItself)
+                        Text("App Starter keeps it running").tag(RunMode.keepRunning)
+                    }
+                    .pickerStyle(.segmented)
+                    Text(app.mode == .startsItself
+                         ? "The command sets the app going and finishes — like ./TRACKER.sh --start, open -a Docker or docker start …"
+                         : "The command is the app itself and keeps running — like npm start or ollama serve. App Starter keeps it going, sends its output to the log, and stops it.")
+                        .font(DS.secondary).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    ScriptEditor(text: $app.start, placeholder: "./TRACKER.sh --start", label: "Start command")
+                    Text("Several lines are fine: they run one after another.").font(DS.secondary).foregroundStyle(.secondary)
+                }
+                Section("Stop") {
+                    ScriptEditor(text: $app.stop, placeholder: app.mode == .keepRunning ? "optional — empty: App Starter stops what it started" : "./TRACKER.sh --stop", label: "Stop command")
+                    if app.mode == .keepRunning {
+                        Text("Empty: App Starter asks the app to quit, and forces it after 10 seconds.").font(DS.secondary).foregroundStyle(.secondary)
                     }
                 }
                 Section("Health check · optional") {

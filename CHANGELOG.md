@@ -4,6 +4,10 @@ All notable changes to App Starter (Keep a Changelog style; dates are when the c
 
 ## [0.1.0] — unreleased
 
+### Changed
+- 2026-10-16: **Application editor order** (Matt's tweak): name / where it goes / working folder, then
+  **Environment variables**, then Start, Stop and the health check.
+
 ### Fixed
 - 2026-10-16: **Code review and deeper testing** (three reviewers; every finding reproduced or read in the code
   before fixing; a test for each). The engine:

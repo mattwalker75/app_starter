@@ -21,6 +21,8 @@ Click an app to edit it.
 - **Name** and **Where it goes**: its own step at the end, a sub-bundle, or a new sub-bundle.
 - **Working folder** (optional): the commands run there, as you, in your login shell — just as if you typed
   them in Terminal (your PATH and Homebrew work; `~/.zshrc` is read too, quietly).
+- **Environment variables**: name and value, for start, stop and the check. Tick **Secret** for passwords
+  and keys: the value is kept encrypted on disk, never in the bundles file, and hidden in the log.
 - **Start**
   - *Starts itself in the background*: the command sets the app going and finishes
     (`./TRACKER.sh --start`, `open -a Docker`, `docker start open-webui`).
@@ -29,8 +31,6 @@ Click an app to edit it.
   - The box takes **several lines**; they run one after another.
 - **Stop**: the command that stops it (several lines allowed). An app App Starter keeps running can leave it
   empty: App Starter asks it to quit and forces it after 10 seconds.
-- **Environment variables**: name and value, for start, stop and the check. Tick **Secret** for passwords
-  and keys: the value is kept encrypted on disk, never in the bundles file, and hidden in the log.
 - **Health check** (optional) — how App Starter knows it is up:
   - *None*: up when the start command has finished (kept running: when the process is running).
   - *Return code*: the start command must finish with exit code 0 (and the stop command, to count as down).
