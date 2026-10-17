@@ -264,8 +264,6 @@ struct StepRow: View {
                             Spacer()
                             stepMenu
                         }
-                        .contentShape(Rectangle())
-                        .draggable(DragItem.step(step.id).token) { DragPreview(title: step.name.isEmpty ? "Sub-bundle" : step.name, icon: "square.stack.3d.up") }
                         if step.apps.isEmpty {
                             Text(targeted ? "Drop it here" : "Empty — add the apps that start together, or drag apps here.").font(DS.secondary).foregroundStyle(targeted ? Theme.accent : .secondary)
                         } else {
@@ -283,6 +281,9 @@ struct StepRow: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            // a sub-bundle is dragged by any part of its card that isn't one of its apps (those move on their own)
+            .contentShape(Rectangle())
+            .modifier(GroupDrag(step: step))
             .overlay(RoundedRectangle(cornerRadius: DS.radius).strokeBorder(Theme.accent, lineWidth: targeted ? 2 : 0))
             // a sub-bundle takes apps dropped on it; a one-app step takes a drop as "put it here, before me"
             .dropDestination(for: String.self) { items, _ in
@@ -459,5 +460,17 @@ struct DragPreview: View {
         Label(title, systemImage: icon).font(DS.body).fontWeight(.semibold)
             .padding(.horizontal, 12).padding(.vertical, 7)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+/// The whole card of a sub-bundle is its drag handle (one-app steps are dragged by their own row).
+struct GroupDrag: ViewModifier {
+    let step: Step
+    func body(content: Content) -> some View {
+        if step.isGroup {
+            content.draggable(DragItem.step(step.id).token) { DragPreview(title: step.name.isEmpty ? "Sub-bundle" : step.name, icon: "square.stack.3d.up") }
+        } else {
+            content
+        }
     }
 }

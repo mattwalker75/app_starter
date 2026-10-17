@@ -5,6 +5,8 @@ All notable changes to App Starter (Keep a Changelog style; dates are when the c
 ## [0.1.0] — unreleased
 
 ### Changed
+- 2026-10-16: **A sub-bundle is dragged by its whole card** (not only its header), so moving a sub-bundle up or down
+  the start/stop order is as easy as moving an app; an app inside it still drags on its own.
 - 2026-10-16: **Edit… in a card's ⋯ menu** (Matt's ask): on an app's card it opens the app's editor; on a
   sub-bundle's card it renames the sub-bundle (this replaces the menu's Rename…).
 - 2026-10-16: **Drag and drop to arrange a bundle** (Matt's idea): hold a card and drag it. A step (one app, or
