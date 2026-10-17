@@ -300,11 +300,17 @@ struct StepRow: View {
 
     private var stepMenu: some View {
         Menu {
+            // edit what the card is: the app, or the sub-bundle's name
+            if step.isGroup {
+                Button("Edit…") { model.sheet = .renameGroup(bundleId: bundle.id, step) }
+            } else if let a = step.apps.first {
+                Button("Edit…") { model.sheet = .editApp(bundleId: bundle.id, a) }
+            }
+            Divider()
             Button("Move up") { model.moveStep(step.id, by: -1, in: bundle.id) }.disabled(number == 1)
             Button("Move down") { model.moveStep(step.id, by: 1, in: bundle.id) }.disabled(last)
             if step.isGroup {
                 Divider()
-                Button("Rename…") { model.sheet = .renameGroup(bundleId: bundle.id, step) }
                 Button("Start this sub-bundle") { model.run(AppBundle(id: bundle.id, name: step.name, steps: [step]), .starting) }.disabled(step.apps.isEmpty)
                 Button("Stop this sub-bundle") { model.run(AppBundle(id: bundle.id, name: step.name, steps: [step]), .stopping) }.disabled(step.apps.isEmpty)
             }
@@ -312,7 +318,7 @@ struct StepRow: View {
             Button(step.isGroup ? "Delete sub-bundle…" : "Delete…", role: .destructive) { confirmDelete = true }
         } label: { Image(systemName: "ellipsis.circle") }
             .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-            .help("Move, rename or delete this step").accessibilityLabel("Step \(number) options")
+            .help("Edit, move or delete this step").accessibilityLabel("Step \(number) options")
     }
 }
 

@@ -17,7 +17,7 @@ each app to be really up before starting the ones that need it.
   one), out of one (drop it between steps), or from one to another. A blue line shows where it will land.
 - **Logs** at the top of a bundle's page shows its apps' logs: pick an app on the left; the log follows along
   while it is open (Follow along), with Show in Finder and Clear.
-- The **⋯** menu on a step also moves it up or down, renames or deletes a sub-bundle, or starts/stops just that sub-bundle.
+- The **⋯** menu on a step: **Edit…** (the app, or a sub-bundle's name), Move up / Move down, Delete, and for a sub-bundle Start or Stop just that sub-bundle.
 - Right-click an app: **Start this one**, **Stop this one**, **Show log**, Edit, Delete.
 - Deleting a step, an app or a bundle only makes App Starter forget it — nothing is stopped.
 
