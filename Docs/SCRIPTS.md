@@ -6,13 +6,14 @@
 ./INSTALL_APP.sh [options…]
 
   (no options)    Check the tools, run the tests, build "App Starter.app" (BUILD_APP.sh) and
-                  copy it to /Applications (asking first).
+                  MOVE it to /Applications (asking first) — build/ is left without it.
   -t, --to DIR    Put the finished app in DIR instead of /Applications — for example
                   ./INSTALL_APP.sh --to ~/Desktop   (DIR must already exist).
   -u, --universal Build one app that runs on Apple-silicon and Intel Macs (for copying to another Mac).
   -s, --sign ID   Sign with a certificate from your Keychain, so the permissions macOS gives the app
                   survive rebuilds (below). Or set APPSTARTER_SIGN_IDENTITY.
   -k, --skip-tests  Don't run the tests first (quicker when you just pulled new code).
+  -p, --copy      Copy the app instead of moving it, so build/App Starter.app stays too.
   -n, --no-copy   Build only; leave the app in build/ and don't touch /Applications.
   -y, --yes       Don't ask before installing tools, installing on a failed test run, or replacing
                   an app that is already there.

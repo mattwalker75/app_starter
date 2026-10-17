@@ -5,6 +5,8 @@ All notable changes to App Starter (Keep a Changelog style; dates are when the c
 ## [0.1.0] — unreleased
 
 ### Changed
+- 2026-10-16: **INSTALL_APP.sh moves the app** out of build/ into /Applications by default (Matt's choice);
+  `-p` / `--copy` copies it instead, leaving build/App Starter.app in place (the old behaviour).
 - 2026-10-16: **Application editor order** (Matt's tweak): name / where it goes / working folder, then
   **Environment variables**, then Start, Stop and the health check.
 

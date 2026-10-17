@@ -22,11 +22,11 @@ Starter. Bundles can start when you log in and stop when you log out. Everything
 ## Install
 
 ```bash
-./INSTALL_APP.sh          # checks the tools, runs the tests, builds, copies to /Applications
+./INSTALL_APP.sh          # checks the tools, runs the tests, builds, moves the app to /Applications
 ```
 
 Then open **App Starter** from Applications. `./INSTALL_APP.sh --help` lists the options (`--check`,
-`--to DIR`, `--sign`, `--skip-tests`…). Run it again after pulling new code.
+`--to DIR`, `--copy` to keep a copy in build/, `--sign`, `--skip-tests`…). Run it again after pulling new code.
 
 ## More
 

@@ -9,13 +9,14 @@
 # Usage:  ./INSTALL_APP.sh [options…]
 #
 #   (no options)    Check the tools, run the tests, build "App Starter.app" (BUILD_APP.sh) and
-#                   copy it to /Applications (asking first).
+#                   MOVE it to /Applications (asking first) — build/ is left without it.
 #   -t, --to DIR    Put the finished app in DIR instead of /Applications — for example
 #                   ./INSTALL_APP.sh --to ~/Desktop   (DIR must already exist).
 #   -u, --universal Build one app that runs on Apple-silicon and Intel Macs (for copying to another Mac).
 #   -s, --sign ID   Sign with a certificate from your Keychain, so the permissions macOS gives the app
 #                   survive rebuilds (see Docs/SCRIPTS.md). Or set APPSTARTER_SIGN_IDENTITY.
 #   -k, --skip-tests  Don't run the tests first (quicker when you just pulled new code).
+#   -p, --copy      Copy the app instead of moving it, so build/App Starter.app stays too.
 #   -n, --no-copy   Build only; leave the app in build/ and don't touch /Applications.
 #   -y, --yes       Don't ask before installing tools, installing on a failed test run, or replacing
 #                   an app that is already there.
@@ -23,7 +24,7 @@
 #   -h, --help      This help.
 #
 # Safe to run again at any time — for example after pulling new code (it rebuilds and replaces the app).
-# Then open App Starter from /Applications (or build/App Starter.app).
+# Then open App Starter from /Applications.
 #
 set -uo pipefail
 ORIG_PWD="$PWD"
@@ -33,13 +34,14 @@ info() { echo "${C_BLU}==>${C_RESET} $*"; }; ok() { echo "${C_GRN}OK ${C_RESET} 
 usage() { awk 'NR>=3 { if (/^#/) { sub(/^# ?/, ""); print } else { exit } }' "${BASH_SOURCE[0]}"; }
 
 MIN_MACOS=14
-COPY=1; YES=0; CHECK_ONLY=0; SKIP_TESTS=0; DEST="/Applications"; BUILD_ARGS=()
+COPY=1; KEEP_BUILD=0; YES=0; CHECK_ONLY=0; SKIP_TESTS=0; DEST="/Applications"; BUILD_ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -t|--to)        [[ $# -ge 2 ]] || { err "--to needs a folder, for example --to ~/Desktop"; exit 2; }; DEST="${2/#\~/$HOME}"; shift ;;
     -u|--universal) BUILD_ARGS+=(--universal) ;;
     -s|--sign)      [[ $# -ge 2 ]] || { err "--sign needs the name of a certificate in your Keychain"; exit 2; }; BUILD_ARGS+=(--sign "$2"); shift ;;
     -k|--skip-tests) SKIP_TESTS=1 ;;
+    -p|--copy)      KEEP_BUILD=1 ;;
     -n|--no-copy)   COPY=0 ;;
     -y|--yes)       YES=1 ;;
     -c|--check)     CHECK_ONLY=1 ;;
@@ -120,17 +122,22 @@ if [[ $COPY -eq 1 ]]; then
         fi
       fi
     else COPY=0; fi
-  elif ! confirm "Copy App Starter.app to $DEST?"; then COPY=0; fi
+  elif ! confirm "$([[ $KEEP_BUILD -eq 1 ]] && echo Copy || echo Move) App Starter.app to $DEST?"; then COPY=0; fi
 fi
 if [[ $COPY -eq 1 ]]; then
-  # ditto copies an app bundle exactly (Apple's recommended way) — first beside it, then swapped in, so a failed
-  # copy never leaves you with no app (or half of one)
+  # first beside the old one, then swapped in, so a failed move/copy never leaves you with no app (or half of one).
+  # By default the app is MOVED out of build/ (Matt's choice); --copy uses ditto (Apple's way to copy a bundle) and
+  # leaves build/App Starter.app where it is.
   NEW="$DEST/.App Starter.app.new"
   rm -rf "$NEW"
-  ditto "build/App Starter.app" "$NEW" || { rm -rf "$NEW"; err "Could not copy the app to $DEST (the old one is untouched)."; exit 1; }
+  if [[ $KEEP_BUILD -eq 1 ]]; then
+    ditto "build/App Starter.app" "$NEW" || { rm -rf "$NEW"; err "Could not copy the app to $DEST (the old one is untouched)."; exit 1; }
+  else
+    mv "build/App Starter.app" "$NEW" || { rm -rf "$NEW"; err "Could not move the app to $DEST (the old one is untouched; the new one is still in build/)."; exit 1; }
+  fi
   if [[ -d "$TARGET" ]]; then rm -rf "$TARGET" || { rm -rf "$NEW"; err "Could not remove the old app in $DEST (is the folder read-only?)."; exit 1; }; fi
   mv "$NEW" "$TARGET" || { err "Could not put the new app in place in $DEST."; exit 1; }
-  ok "Installed $TARGET"
+  ok "Installed $TARGET ($([[ $KEEP_BUILD -eq 1 ]] && echo "copied; build/App Starter.app stays" || echo "moved out of build/"))"
   if [[ $REOPEN -eq 1 ]]; then open "$TARGET" && ok "Opened the new App Starter"; fi
   echo; echo "Next:  open \"$TARGET\""
   [[ "$DEST" == "/Applications" ]] && echo "       (or find App Starter in Launchpad)"
