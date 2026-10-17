@@ -160,6 +160,12 @@ struct AppEditor: View {
                 Spacer()
                 // start or stop this app now (Matt: at the top of the editor) — only what is saved can run
                 AppRunPill(bundleId: bundleId, appId: app.id, blockedBecause: isNew ? "Add it first to start or stop it" : (isDirty ? "Save first to start or stop it" : nil))
+                // a way out besides Cancel at the bottom (Matt): closes without saving, like Cancel or Esc
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark").font(.system(size: 11, weight: .bold)).foregroundStyle(.secondary)
+                        .frame(width: 24, height: 24).background(Color.secondary.opacity(0.15), in: Circle())
+                }
+                .buttonStyle(.plain).help("Close without saving (Esc)").accessibilityLabel("Close")
             }
             .padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 8)
             Form {

@@ -5,6 +5,8 @@ All notable changes to App Starter (Keep a Changelog style; dates are when the c
 ## [0.1.0] — unreleased
 
 ### Added
+- 2026-10-17: **A ✕ to close the application editor** in its top-right corner (Matt: a way out besides Cancel at
+  the bottom). It closes without saving, like Cancel or Esc.
 - 2026-10-17: **Pause an app** (Matt's pick, mockup A): a pause / play button on every app card. A paused app is left
   out when its bundle starts or stops (Start, Start the rest, Stop, start at login, stop at logout) and is left
   exactly as it is, running or not. Its card fades and gets a dashed amber edge, the label says *Paused*, and a
